@@ -1,0 +1,20 @@
+{
+    "api_profiles": {
+        "Contoh Akun Token": {
+            "api_token": "",
+            "global_api_key": "",
+            "email": "",
+            "auth_method": "token"
+        },
+        "Contoh Akun Global Key": {
+            "api_token": "",
+            "global_api_key": "",
+            "email": "",
+            "auth_method": "key"
+        }
+    },
+    "current_profile": "Contoh Akun Token",
+    "batch_size": 10,
+    "theme": "dark"
+}
+

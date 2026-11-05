@@ -1,12 +1,10 @@
 """In-memory Multi-Account Session Token Management.
 
 CRITICAL SECURITY RULES:
-1. Tokens are NEVER written to disk (no DB, JSON, YAML, TOML, INI, .env, registry, cache).
-2. Tokens for all connected Cloudflare accounts are stored only in-memory in bytearray buffers during the active session.
-3. Upon disconnect or app exit, the memory buffers for all accounts are explicitly zeroed (overwritten with null bytes).
-4. Note on Python memory: Python strings are immutable and the garbage collector handles memory.
-   While we overwrite the bytearray buffer with 0s and delete references, transient memory copies
-   may exist until process termination. We do NOT guarantee 100% RAM wipe beyond OS process boundary.
+1. Tokens and API keys for connected Cloudflare accounts are stored only in-memory
+   in bytearray buffers during runtime.
+2. Upon disconnect, the memory buffers for accounts are explicitly zeroed (overwritten with null bytes).
+3. Persistent profiles are stored in 'config.json' (strictly ignored by .gitignore to prevent leaks to GitHub).
 """
 
 from typing import Optional, List, Dict, Any
@@ -18,12 +16,30 @@ import gc
 class AccountSession:
     """Represents a single authenticated Cloudflare account in-memory."""
 
-    def __init__(self, account_id: str, label: str, token: str, user_info: Optional[str] = None):
+    def __init__(
+        self,
+        account_id: str,
+        label: str,
+        token: str = "",
+        user_info: Optional[str] = None,
+        auth_method: str = "token",
+        global_api_key: Optional[str] = None,
+        email: Optional[str] = None,
+    ):
         self.account_id: str = account_id
         self.label: str = label
-        self._token_buffer: Optional[bytearray] = bytearray(token.strip().encode("utf-8"))
+        self.auth_method: str = auth_method or "token"
+        self._token_buffer: Optional[bytearray] = (
+            bytearray(token.strip().encode("utf-8")) if token and token.strip() else None
+        )
+        self._key_buffer: Optional[bytearray] = (
+            bytearray(global_api_key.strip().encode("utf-8"))
+            if global_api_key and global_api_key.strip()
+            else None
+        )
+        self.email: Optional[str] = email.strip() if email and email.strip() else None
         self.connected_at: str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        self.user_info: Optional[str] = user_info
+        self.user_info: Optional[str] = user_info or self.email
         self.zones: List[Any] = []
 
     def get_token(self) -> Optional[str]:
@@ -31,12 +47,39 @@ class AccountSession:
             return self._token_buffer.decode("utf-8")
         return None
 
+    def get_global_api_key(self) -> Optional[str]:
+        if self._key_buffer and len(self._key_buffer) > 0:
+            return self._key_buffer.decode("utf-8")
+        return None
+
+    def get_auth_headers(self) -> Dict[str, str]:
+        """Generates authentication headers according to account's auth_method."""
+        if self.auth_method == "key":
+            key = self.get_global_api_key()
+            if not key or not self.email:
+                raise ValueError("Global API Key dan Email wajib terdaftar.")
+            return {
+                "X-Auth-Key": key,
+                "X-Auth-Email": self.email,
+            }
+        else:
+            tok = self.get_token()
+            if not tok:
+                raise ValueError("API Token tidak terdaftar.")
+            return {
+                "Authorization": f"Bearer {tok}",
+            }
+
     def clear(self):
-        """Zeroes bytearray and removes references."""
+        """Zeroes bytearrays and removes references."""
         if self._token_buffer is not None:
             for i in range(len(self._token_buffer)):
                 self._token_buffer[i] = 0
             self._token_buffer = None
+        if self._key_buffer is not None:
+            for i in range(len(self._key_buffer)):
+                self._key_buffer[i] = 0
+            self._key_buffer = None
         self.zones.clear()
 
     def to_dict(self) -> Dict[str, Any]:
@@ -44,7 +87,8 @@ class AccountSession:
             "account_id": self.account_id,
             "label": self.label,
             "connected_at": self.connected_at,
-            "user_info": self.user_info or "-",
+            "user_info": self.user_info or self.email or "-",
+            "auth_method": self.auth_method,
             "zones_count": len(self.zones),
         }
 
@@ -80,15 +124,37 @@ class MultiAccountSessionManager:
             return self.active_account.connected_at
         return None
 
-    def add_account(self, label: str, token: str, user_info: Optional[str] = None) -> str:
+    def add_account(
+        self,
+        label: str,
+        token: str = "",
+        user_info: Optional[str] = None,
+        auth_method: str = "token",
+        global_api_key: Optional[str] = None,
+        email: Optional[str] = None,
+    ) -> str:
         """Adds a new Cloudflare account session in-memory."""
-        token_clean = token.strip()
-        if not token_clean:
-            raise ValueError("Token tidak boleh kosong.")
+        clean_label = label.strip() if label and label.strip() else f"Akun CF #{len(self._accounts) + 1}"
+
+        if auth_method == "key":
+            if not global_api_key or not global_api_key.strip():
+                raise ValueError("Global API Key tidak boleh kosong.")
+            if not email or not email.strip():
+                raise ValueError("Email akun Cloudflare tidak boleh kosong.")
+        else:
+            if not token or not token.strip():
+                raise ValueError("Token tidak boleh kosong.")
 
         account_id = f"acc_{uuid.uuid4().hex[:8]}"
-        clean_label = label.strip() if label and label.strip() else f"Akun CF #{len(self._accounts) + 1}"
-        session = AccountSession(account_id, clean_label, token_clean, user_info)
+        session = AccountSession(
+            account_id=account_id,
+            label=clean_label,
+            token=token,
+            user_info=user_info,
+            auth_method=auth_method,
+            global_api_key=global_api_key,
+            email=email,
+        )
         self._accounts[account_id] = session
 
         # Automatically make active if first account
@@ -120,6 +186,17 @@ class MultiAccountSessionManager:
             return self._accounts[account_id].get_token()
         return None
 
+    def get_auth_headers_for(self, account_id: Optional[str] = None) -> Dict[str, str]:
+        """Gets authentication headers dictionary for the specified or active account."""
+        target_id = account_id or self._active_id
+        if target_id and target_id in self._accounts:
+            return self._accounts[target_id].get_auth_headers()
+        token = self.get_token()
+        if token:
+            return {"Authorization": f"Bearer {token}"}
+        from src.utils.errors import AuthenticationError
+        raise AuthenticationError("Tidak ada akun Cloudflare aktif dalam sesi. Silakan hubungkan akun terlebih dahulu.")
+
     def find_account_id_for_zone(self, zone_id: str) -> Optional[str]:
         """Finds the account_id that owns the specified zone_id across all sessions."""
         if not zone_id:
@@ -129,6 +206,12 @@ class MultiAccountSessionManager:
                 zid = getattr(z, "id", None) or (z.get("id") if isinstance(z, dict) else None)
                 if zid == zone_id:
                     return acc.account_id
+        return None
+
+    def get_account_by_label(self, label: str) -> Optional[AccountSession]:
+        for acc in self._accounts.values():
+            if acc.label.lower() == label.lower():
+                return acc
         return None
 
     def remove_account(self, account_id: str) -> None:
@@ -161,5 +244,5 @@ class MultiAccountSessionManager:
         return list(self._accounts.values())
 
 
-# Global active multi-account session manager instance (in-memory only)
+# Global active multi-account session manager instance
 active_session = MultiAccountSessionManager()

@@ -58,15 +58,8 @@ class CloudflareClient:
         token_override: Optional[str] = None,
     ) -> Dict[str, str]:
         if token_override:
-            token = token_override
-        elif account_id:
-            token = active_session.get_token_for(account_id)
-        else:
-            token = active_session.get_token()
-
-        if not token:
-            raise AuthenticationError("Tidak ada token aktif dalam sesi. Silakan hubungkan akun Cloudflare terlebih dahulu.")
-        return {"Authorization": f"Bearer {token}"}
+            return {"Authorization": f"Bearer {token_override}"}
+        return active_session.get_auth_headers_for(account_id=account_id)
 
     def request(
         self,
@@ -132,6 +125,38 @@ class CloudflareClient:
         """Tests the token connection using /user/tokens/verify."""
         res = self.request("GET", "user/tokens/verify", token_override=token)
         return res.get("result", {})
+
+    def verify_credentials(
+        self,
+        auth_method: str = "token",
+        token: Optional[str] = None,
+        global_api_key: Optional[str] = None,
+        email: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Tests credentials using tokens/verify or accounts endpoint."""
+        if auth_method == "key":
+            if not global_api_key or not email:
+                raise AuthenticationError("Global API Key dan Email wajib diisi.")
+            client = self._get_client()
+            headers = {
+                "X-Auth-Key": global_api_key.strip(),
+                "X-Auth-Email": email.strip(),
+                "Content-Type": "application/json",
+                "User-Agent": settings.USER_AGENT,
+            }
+            try:
+                res = client.get("accounts", headers=headers)
+            except httpx.RequestError as exc:
+                clean_err = sanitize_message(str(exc))
+                raise NetworkError(f"Gagal menghubungi Cloudflare: {clean_err}")
+
+            if res.status_code == 200:
+                data = res.json()
+                if data.get("success", False):
+                    return {"status": "active", "accounts": data.get("result", [])}
+            raise AuthenticationError("Autentikasi Cloudflare gagal (Global API Key atau Email salah).")
+        else:
+            return self.verify_token(token=token)
 
     def close(self):
         """Closes the underlying HTTP client connection pool."""

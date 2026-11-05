@@ -1,6 +1,6 @@
-"""Connect Cloudflare Page (Multi-Account Edition).
-Allows user to add multiple Cloudflare accounts, switch active accounts,
-and securely remove or disconnect accounts in-memory.
+"""Connect Cloudflare Page (Multi-Account Edition with Persistent Profiles).
+Allows users to add multiple Cloudflare accounts (Token or Global API Key),
+switch active accounts, and manage persistent profiles in local config.json.
 """
 
 from PySide6.QtWidgets import (
@@ -17,11 +17,15 @@ from PySide6.QtWidgets import (
     QHeaderView,
     QMessageBox,
     QScrollArea,
+    QRadioButton,
+    QButtonGroup,
+    QCheckBox,
 )
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QColor, QFont
 from src.security.session import active_session
 from src.ui.workers import ConnectWorker
+import src.config_manager as config_manager
 
 
 class ConnectPage(QWidget):
@@ -54,11 +58,11 @@ class ConnectPage(QWidget):
 
         # Title & Subtitle
         header_layout = QVBoxLayout()
-        header_title = QLabel("Koneksi Cloudflare API (Multi-Akun)")
+        header_title = QLabel("Koneksi Cloudflare API (Multi-Akun & Penyimpanan Kredensial)")
         header_title.setStyleSheet("font-size: 16px; font-weight: 700; color: #F8FAFC;")
         header_sub = QLabel(
-            "Hubungkan dan kelola banyak akun Cloudflare sekaligus dalam satu sesi. "
-            "Setiap token disimpan aman hanya di RAM dan langsung dibersihkan saat diputuskan atau aplikasi ditutup."
+            "Hubungkan dan simpan profil akun Cloudflare Anda secara otomatis. "
+            "Kredensial disimpan di file lokal config.json dan dilindungi .gitignore sehingga tidak akan pernah ter-push ke GitHub."
         )
         header_sub.setWordWrap(True)
         header_sub.setStyleSheet("font-size: 11px; color: #94A3B8; margin-top: 2px;")
@@ -73,9 +77,30 @@ class ConnectPage(QWidget):
         form_layout.setContentsMargins(14, 12, 14, 12)
         form_layout.setSpacing(10)
 
-        form_title = QLabel("➕ Tambah Akun Cloudflare Baru")
+        form_title = QLabel("➕ Tambah / Hubungkan Akun Cloudflare")
         form_title.setStyleSheet("font-size: 13px; font-weight: 700; color: #F8FAFC;")
         form_layout.addWidget(form_title)
+
+        # Auth Method Selector
+        auth_row = QHBoxLayout()
+        auth_row.setSpacing(16)
+        auth_lbl = QLabel("Metode Autentikasi:")
+        auth_lbl.setStyleSheet("font-weight: 600; color: #CBD5E1; font-size: 12px;")
+        auth_row.addWidget(auth_lbl)
+
+        self.auth_group = QButtonGroup(self)
+        self.radio_token = QRadioButton("API Token (Rekomendasi)")
+        self.radio_token.setChecked(True)
+        self.radio_token.toggled.connect(self._toggle_auth_method)
+        self.auth_group.addButton(self.radio_token)
+        auth_row.addWidget(self.radio_token)
+
+        self.radio_key = QRadioButton("Global API Key + Email")
+        self.radio_key.toggled.connect(self._toggle_auth_method)
+        self.auth_group.addButton(self.radio_key)
+        auth_row.addWidget(self.radio_key)
+        auth_row.addStretch()
+        form_layout.addLayout(auth_row)
 
         inputs_row = QHBoxLayout()
         inputs_row.setSpacing(12)
@@ -85,16 +110,18 @@ class ConnectPage(QWidget):
         lbl_label = QLabel("Label / Nama Akun:")
         lbl_label.setStyleSheet("font-weight: 600; color: #E2E8F0; font-size: 12px;")
         self.label_input = QLineEdit()
-        self.label_input.setPlaceholderText("Contoh: Akun Utama / Akun Klien A")
+        self.label_input.setPlaceholderText("Contoh: Akun Utama / Nagawin")
         lbl_vbox.addWidget(lbl_label)
         lbl_vbox.addWidget(self.label_input)
         inputs_row.addLayout(lbl_vbox, stretch=2)
 
-        # Token Input
-        tok_vbox = QVBoxLayout()
+        # Token Input Container
+        self.token_container = QWidget()
+        tok_vbox = QVBoxLayout(self.token_container)
+        tok_vbox.setContentsMargins(0, 0, 0, 0)
         tok_label = QLabel("Cloudflare API Token:")
         tok_label.setStyleSheet("font-weight: 600; color: #E2E8F0; font-size: 12px;")
-        
+
         tok_hbox = QHBoxLayout()
         self.token_input = QLineEdit()
         self.token_input.setPlaceholderText("Tempel token API di sini (contoh: v8x_abc...)")
@@ -116,19 +143,53 @@ class ConnectPage(QWidget):
 
         tok_vbox.addWidget(tok_label)
         tok_vbox.addLayout(tok_hbox)
-        inputs_row.addLayout(tok_vbox, stretch=4)
+        inputs_row.addWidget(self.token_container, stretch=4)
 
+        # Global Key + Email Container (Initially Hidden)
+        self.key_container = QWidget()
+        self.key_container.hide()
+        key_hbox = QHBoxLayout(self.key_container)
+        key_hbox.setContentsMargins(0, 0, 0, 0)
+        key_hbox.setSpacing(10)
+
+        email_vbox = QVBoxLayout()
+        email_lbl = QLabel("Email Cloudflare:")
+        email_lbl.setStyleSheet("font-weight: 600; color: #E2E8F0; font-size: 12px;")
+        self.email_input = QLineEdit()
+        self.email_input.setPlaceholderText("email@domain.com")
+        email_vbox.addWidget(email_lbl)
+        email_vbox.addWidget(self.email_input)
+        key_hbox.addLayout(email_vbox, stretch=2)
+
+        gkey_vbox = QVBoxLayout()
+        gkey_lbl = QLabel("Global API Key:")
+        gkey_lbl.setStyleSheet("font-weight: 600; color: #E2E8F0; font-size: 12px;")
+        self.key_input = QLineEdit()
+        self.key_input.setPlaceholderText("Global API Key Cloudflare")
+        self.key_input.setEchoMode(QLineEdit.EchoMode.Password)
+        self.key_input.returnPressed.connect(self.handle_connect)
+        gkey_vbox.addWidget(gkey_lbl)
+        gkey_vbox.addWidget(self.key_input)
+        key_hbox.addLayout(gkey_vbox, stretch=2)
+
+        inputs_row.addWidget(self.key_container, stretch=4)
         form_layout.addLayout(inputs_row)
 
-        # Connect button
-        btn_row = QHBoxLayout()
-        self.connect_btn = QPushButton("🔗 Hubungkan & Tambah Akun")
+        # Options & Connect button row
+        bottom_form_row = QHBoxLayout()
+        self.save_local_chk = QCheckBox("💾 Simpan ke config.json agar otomatis aktif setiap membuka aplikasi")
+        self.save_local_chk.setChecked(True)
+        self.save_local_chk.setStyleSheet("color: #38BDF8; font-weight: 500; font-size: 12px;")
+        bottom_form_row.addWidget(self.save_local_chk)
+        bottom_form_row.addStretch()
+
+        self.connect_btn = QPushButton("🔗 Hubungkan & Simpan Akun")
         self.connect_btn.setProperty("class", "btn-primary")
         self.connect_btn.setMinimumHeight(38)
         self.connect_btn.clicked.connect(self.handle_connect)
-        btn_row.addWidget(self.connect_btn)
-        btn_row.addStretch()
-        form_layout.addLayout(btn_row)
+        bottom_form_row.addWidget(self.connect_btn)
+
+        form_layout.addLayout(bottom_form_row)
 
         # Progress bar
         self.progress_bar = QProgressBar()
@@ -146,7 +207,7 @@ class ConnectPage(QWidget):
         list_layout.setSpacing(12)
 
         top_list_row = QHBoxLayout()
-        list_title = QLabel("📋 Daftar Akun Cloudflare Terhubung di Sesi Ini")
+        list_title = QLabel("📋 Daftar Akun Cloudflare Terhubung & Tersimpan")
         list_title.setStyleSheet("font-size: 15px; font-weight: 700; color: #F8FAFC;")
         top_list_row.addWidget(list_title)
         top_list_row.addStretch()
@@ -160,9 +221,9 @@ class ConnectPage(QWidget):
         list_layout.addLayout(top_list_row)
 
         self.account_table = QTableWidget()
-        self.account_table.setColumnCount(5)
+        self.account_table.setColumnCount(6)
         self.account_table.setHorizontalHeaderLabels([
-            "Nama / Label Akun", "Status", "Total Domain", "Waktu Terhubung", "Aksi"
+            "Nama / Label Akun", "Metode Auth", "Status", "Total Domain", "Waktu Terhubung", "Aksi"
         ])
         acc_header = self.account_table.horizontalHeader()
         acc_header.setMinimumSectionSize(60)
@@ -171,6 +232,7 @@ class ConnectPage(QWidget):
         acc_header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
         acc_header.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
         acc_header.setSectionResizeMode(4, QHeaderView.ResizeMode.ResizeToContents)
+        acc_header.setSectionResizeMode(5, QHeaderView.ResizeMode.ResizeToContents)
         self.account_table.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         self.account_table.setAlternatingRowColors(True)
         self.account_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
@@ -179,21 +241,20 @@ class ConnectPage(QWidget):
 
         layout.addWidget(list_card)
 
-        # Permissions Guide Box
+        # Security & Privacy Shield Box
         guide_frame = QFrame()
         guide_frame.setProperty("class", "card")
         guide_layout = QVBoxLayout(guide_frame)
         guide_layout.setContentsMargins(14, 10, 14, 10)
         guide_layout.setSpacing(6)
 
-        guide_title = QLabel("📋 Catatan Izin Minimum Setiap Akun")
-        guide_title.setStyleSheet("font-size: 12px; font-weight: 700; color: #F38020;")
+        guide_title = QLabel("🛡️ Jaminan Keamanan & Git Privacy Shield")
+        guide_title.setStyleSheet("font-size: 12px; font-weight: 700; color: #10B981;")
         guide_layout.addWidget(guide_title)
 
         guide_text = QLabel(
-            "Untuk setiap akun Cloudflare yang dihubungkan, pastikan token memiliki izin:<br>"
-            "&bull; <b>Zone &rarr; Zone &rarr; Read</b> &nbsp;&bull; <b>Zone &rarr; Single Redirect &rarr; Edit</b>.<br>"
-            "Anda dapat berganti antar akun secara instan melalui dropdown pemilih akun di pojok atas atau tabel di atas."
+            "&bull; <b>Zero-Leak GitHub:</b> File konfigurasi <code>config.json</code> terdaftar di <code>.gitignore</code> sehingga kredensial Anda tidak akan terkirim saat push ke repository publik.<br>"
+            "&bull; <b>Multi-Akun Otomatis:</b> Semua akun yang tersimpan di sini akan otomatis dimuat saat aplikasi dijalankan kembali. Bulk Redirect akan otomatis mendeteksi dan menggunakan token yang sesuai tanpa switch manual."
         )
         guide_text.setTextFormat(Qt.TextFormat.RichText)
         guide_text.setStyleSheet("color: #CBD5E1; font-size: 11px;")
@@ -206,6 +267,11 @@ class ConnectPage(QWidget):
 
         self.refresh_account_table()
 
+    def _toggle_auth_method(self):
+        is_token = self.radio_token.isChecked()
+        self.token_container.setVisible(is_token)
+        self.key_container.setVisible(not is_token)
+
     def toggle_token_visibility(self):
         if self.token_input.echoMode() == QLineEdit.EchoMode.Password:
             self.token_input.setEchoMode(QLineEdit.EchoMode.Normal)
@@ -216,19 +282,36 @@ class ConnectPage(QWidget):
 
     def clear_input_token(self):
         self.token_input.clear()
+        self.email_input.clear()
+        self.key_input.clear()
         self.label_input.clear()
 
     def handle_connect(self):
-        token = self.token_input.text().strip()
+        is_token = self.radio_token.isChecked()
+        auth_method = "token" if is_token else "key"
+        token = self.token_input.text().strip() if is_token else ""
+        global_key = self.key_input.text().strip() if not is_token else ""
+        email = self.email_input.text().strip() if not is_token else ""
         label = self.label_input.text().strip()
-        if not token:
-            self.show_toast.emit("Silakan masukkan token API Cloudflare terlebih dahulu.", True)
+
+        if is_token and not token:
+            self.show_toast.emit("Silakan masukkan Cloudflare API Token terlebih dahulu.", True)
+            return
+        if not is_token and (not global_key or not email):
+            self.show_toast.emit("Silakan lengkapi Email dan Global API Key terlebih dahulu.", True)
             return
 
         self.connect_btn.setEnabled(False)
         self.progress_bar.show()
 
-        self.worker = ConnectWorker(token, label=label, parent=self)
+        self.worker = ConnectWorker(
+            token=token,
+            label=label,
+            auth_method=auth_method,
+            global_api_key=global_key,
+            email=email,
+            parent=self,
+        )
         self.worker.finished.connect(self._on_connect_success)
         self.worker.error.connect(self._on_connect_error)
         self.worker.start()
@@ -236,9 +319,24 @@ class ConnectPage(QWidget):
     def _on_connect_success(self, result: dict):
         self.progress_bar.hide()
         self.connect_btn.setEnabled(True)
-        self.token_input.clear()
-        self.label_input.clear()
 
+        final_label = result.get("label", "")
+        auth_method = result.get("auth_method", "token")
+        tok = result.get("token", "")
+        gkey = result.get("global_api_key", "")
+        em = result.get("email", "")
+
+        # Persist to local config.json if checked
+        if self.save_local_chk.isChecked() and final_label:
+            profile_payload = {
+                "auth_method": auth_method,
+                "api_token": tok,
+                "global_api_key": gkey,
+                "email": em,
+            }
+            config_manager.save_profile(final_label, profile_payload, set_as_current=True)
+
+        self.clear_input_token()
         self.show_toast.emit(result.get("message", "Akun berhasil terhubung!"), False)
         self.refresh_account_table()
         self.connection_changed.emit(True)
@@ -260,30 +358,37 @@ class ConnectPage(QWidget):
         for row, acc in enumerate(accounts):
             is_active = (acc.account_id == active_id)
 
-            # Label
+            # 0. Label
             lbl_item = QTableWidgetItem(f"★ {acc.label} (Aktif)" if is_active else acc.label)
             lbl_item.setForeground(QColor("#38BDF8" if is_active else "#F8FAFC"))
             self.account_table.setItem(row, 0, lbl_item)
 
-            # Status
+            # 1. Auth Method
+            method_str = "🔑 Global Key" if acc.auth_method == "key" else "🛡️ API Token"
+            method_item = QTableWidgetItem(method_str)
+            method_item.setForeground(QColor("#F59E0B" if acc.auth_method == "key" else "#10B981"))
+            method_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            self.account_table.setItem(row, 1, method_item)
+
+            # 2. Status
             status_item = QTableWidgetItem("● Aktif" if is_active else "○ Siaga")
             status_item.setForeground(QColor("#34D399" if is_active else "#94A3B8"))
             status_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-            self.account_table.setItem(row, 1, status_item)
+            self.account_table.setItem(row, 2, status_item)
 
-            # Domain count
+            # 3. Domain count
             dom_item = QTableWidgetItem(f"{len(acc.zones)} Domain")
             dom_item.setForeground(QColor("#CBD5E1"))
             dom_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-            self.account_table.setItem(row, 2, dom_item)
+            self.account_table.setItem(row, 3, dom_item)
 
-            # Connected At
+            # 4. Connected At
             time_item = QTableWidgetItem(acc.connected_at)
             time_item.setFont(mono_font)
             time_item.setForeground(QColor("#94A3B8"))
-            self.account_table.setItem(row, 3, time_item)
+            self.account_table.setItem(row, 4, time_item)
 
-            # Action Buttons
+            # 5. Action Buttons
             action_widget = QWidget()
             action_layout = QHBoxLayout(action_widget)
             action_layout.setContentsMargins(2, 2, 2, 2)
@@ -293,7 +398,7 @@ class ConnectPage(QWidget):
                 switch_btn = QPushButton("Gunakan Akun Ini")
                 switch_btn.setProperty("class", "btn-action-edit")
                 switch_btn.setStyleSheet("padding: 2px 8px; font-size: 11px;")
-                switch_btn.clicked.connect(lambda checked=False, aid=acc.account_id: self._switch_to_account(aid))
+                switch_btn.clicked.connect(lambda checked=False, aid=acc.account_id, albl=acc.label: self._switch_to_account(aid, albl))
                 action_layout.addWidget(switch_btn)
 
             rm_btn = QPushButton("Putuskan")
@@ -302,13 +407,12 @@ class ConnectPage(QWidget):
             rm_btn.clicked.connect(lambda checked=False, aid=acc.account_id, albl=acc.label: self._remove_account(aid, albl))
             action_layout.addWidget(rm_btn)
 
-            self.account_table.setCellWidget(row, 4, action_widget)
+            self.account_table.setCellWidget(row, 5, action_widget)
 
-    def _switch_to_account(self, account_id: str):
+    def _switch_to_account(self, account_id: str, label: str):
         active_session.switch_account(account_id)
+        config_manager.set_current_profile(label)
         self.refresh_account_table()
-        acc = active_session.active_account
-        label = acc.label if acc else account_id
         self.show_toast.emit(f"Beralih ke akun: {label}", False)
         self.account_switched.emit(account_id)
         self.connection_changed.emit(True)
@@ -317,25 +421,29 @@ class ConnectPage(QWidget):
         reply = QMessageBox.question(
             self,
             "Putuskan Akun",
-            f"Apakah Anda yakin ingin memutuskan akun '{label}'?\nToken akan dibersihkan dari RAM.",
+            f"Apakah Anda yakin ingin memutuskan akun '{label}'?\n\n"
+            "Kredensial akan dibersihkan dari RAM dan dihapus dari penyimpanan lokal config.json.",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
         )
         if reply == QMessageBox.StandardButton.Yes:
             active_session.remove_account(account_id)
+            config_manager.delete_profile(label)
             self.refresh_account_table()
             is_conn = active_session.is_connected
-            self.show_toast.emit(f"Akun '{label}' telah diputuskan.", False)
+            self.show_toast.emit(f"Akun '{label}' telah diputuskan dan dihapus dari config.", False)
             self.connection_changed.emit(is_conn)
 
     def handle_disconnect_all(self):
         reply = QMessageBox.question(
             self,
             "Putuskan Semua Akun",
-            "Apakah Anda yakin ingin memutuskan seluruh akun Cloudflare?\nSemua token di RAM akan dinolkan.",
+            "Apakah Anda yakin ingin memutuskan seluruh akun Cloudflare?\n"
+            "Semua profil di RAM dan penyimpanan lokal (config.json) akan dibersihkan.",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
         )
         if reply == QMessageBox.StandardButton.Yes:
             active_session.disconnect_all()
+            config_manager.clear_all_profiles()
             self.refresh_account_table()
-            self.show_toast.emit("Seluruh akun telah diputuskan dan memori dibersihkan.", False)
+            self.show_toast.emit("Seluruh akun telah diputuskan dan konfigurasi lokal dibersihkan.", False)
             self.connection_changed.emit(False)

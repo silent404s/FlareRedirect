@@ -12,6 +12,18 @@ env/
 venv/
 ENV/
 
+# Configuration & Sensitive Credentials (Zero-Leak)
+config.json
+src/config.json
+accounts.json
+*.json.local
+data/
+src/data/
+*.log
+app.log
+*.key
+*.pem
+
 # PyInstaller / Build outputs
 build/
 dist/

@@ -27,3 +27,56 @@ def test_env_example_file_exists():
     assert "CF_TIMEOUT_CONNECT" in content
     assert "MAX_AUDIT_LOG_ENTRIES" in content
 
+
+def test_config_json_example_exists_and_safe():
+    root = Path(__file__).resolve().parent.parent
+    cfg_example = root / "config.json.example"
+    assert cfg_example.is_file()
+    import json
+    data = json.loads(cfg_example.read_text(encoding="utf-8"))
+    assert "api_profiles" in data
+    # Ensure no real tokens are stored in template
+    for prof in data["api_profiles"].values():
+        assert prof["api_token"] == ""
+        assert prof["global_api_key"] == ""
+
+
+def test_gitignore_protects_config_json():
+    root = Path(__file__).resolve().parent.parent
+    gitignore_file = root / ".gitignore"
+    assert gitignore_file.is_file()
+    content = gitignore_file.read_text(encoding="utf-8")
+    assert "config.json" in content
+    assert ".env" in content
+
+
+def test_config_manager_crud(tmp_path, monkeypatch):
+    import src.config_manager as cm
+    fake_config = tmp_path / "test_config.json"
+    monkeypatch.setattr(cm, "get_config_path", lambda: fake_config)
+
+    # 1. Load when missing
+    cfg = cm.load_config()
+    assert cfg["api_profiles"] == {}
+
+    # 2. Save profile
+    cm.save_profile("Akun Test", {"auth_method": "token", "api_token": "token123", "global_api_key": "", "email": ""})
+    profiles = cm.get_profiles()
+    assert "Akun Test" in profiles
+    assert profiles["Akun Test"]["api_token"] == "token123"
+
+    # 3. Add second profile and switch current
+    cm.save_profile("Akun Kedua", {"auth_method": "key", "api_token": "", "global_api_key": "key456", "email": "test@domain.com"})
+    assert cm.load_config()["current_profile"] == "Akun Kedua"
+
+    # 4. Set current profile
+    cm.set_current_profile("Akun Test")
+    assert cm.load_config()["current_profile"] == "Akun Test"
+
+    # 5. Delete profile
+    cm.delete_profile("Akun Test")
+    profiles = cm.get_profiles()
+    assert "Akun Test" not in profiles
+    assert "Akun Kedua" in profiles
+
+

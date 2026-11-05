@@ -81,3 +81,18 @@ def test_session_cleanup_on_exit():
     manager.disconnect()
     assert not manager.is_connected
     assert manager.get_token() is None
+
+
+def test_session_global_api_key_auth():
+    manager = MultiAccountSessionManager()
+    aid = manager.add_account(
+        label="Akun Global Key",
+        auth_method="key",
+        global_api_key="my_global_key_abc123",
+        email="admin@example.com",
+    )
+    assert manager.is_connected
+    headers = manager.get_auth_headers_for(aid)
+    assert headers["X-Auth-Key"] == "my_global_key_abc123"
+    assert headers["X-Auth-Email"] == "admin@example.com"
+

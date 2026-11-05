@@ -27,6 +27,7 @@ from src.ui.redirect_page import RedirectPage
 from src.ui.connect_page import ConnectPage
 from src.ui.security_page import SecurityPage
 from src.ui.about_page import AboutPage
+import src.config_manager as config_manager
 
 
 class MainWindow(QMainWindow):
@@ -53,6 +54,7 @@ class MainWindow(QMainWindow):
 
         self._init_ui()
         self.apply_theme()
+        self._load_saved_profiles()
 
     def _init_ui(self):
         # Central widget
@@ -264,12 +266,63 @@ class MainWindow(QMainWindow):
             active_session.switch_account(acc_id)
             self._on_account_switched(acc_id)
 
+    def _load_saved_profiles(self):
+        """Loads persistent Cloudflare profiles from config.json on application startup."""
+        cfg = config_manager.load_config()
+        profiles = cfg.get("api_profiles", {})
+        curr_prof = cfg.get("current_profile", "")
+
+        loaded_count = 0
+        for name, prof in profiles.items():
+            if not isinstance(prof, dict):
+                continue
+            auth_method = prof.get("auth_method", "token")
+            api_token = prof.get("api_token", "")
+            global_api_key = prof.get("global_api_key", "")
+            email = prof.get("email", "")
+
+            if auth_method == "key" and global_api_key and email:
+                try:
+                    active_session.add_account(
+                        label=name,
+                        auth_method="key",
+                        global_api_key=global_api_key,
+                        email=email,
+                    )
+                    loaded_count += 1
+                except Exception:
+                    pass
+            elif auth_method == "token" and api_token:
+                try:
+                    active_session.add_account(
+                        label=name,
+                        token=api_token,
+                        auth_method="token",
+                    )
+                    loaded_count += 1
+                except Exception:
+                    pass
+
+        # Switch to preferred current_profile if specified
+        if curr_prof:
+            for acc in active_session.get_all_accounts():
+                if acc.label.lower() == curr_prof.lower():
+                    active_session.switch_account(acc.account_id)
+                    break
+
+        if loaded_count > 0:
+            self._on_connection_changed(True)
+            self.connect_page.refresh_account_table()
+            self.show_toast_message(f"Otomatis memuat {loaded_count} akun Cloudflare dari konfigurasi lokal.", False)
+
     def _on_account_switched(self, account_id: str):
         self._refresh_account_switcher()
         self.connect_page.refresh_account_table()
         self.domain_page.load_domains()
         acc = active_session.active_account
         label = acc.label if acc else account_id
+        if label:
+            config_manager.set_current_profile(label)
         self.show_toast_message(f"Beralih ke akun Cloudflare: {label}", False)
 
     def _on_connection_changed(self, is_connected: bool):

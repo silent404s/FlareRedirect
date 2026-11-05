@@ -26,23 +26,45 @@ from src.utils.audit import session_audit
 
 
 class ConnectWorker(QThread):
-    """Verifies token and adds account to multi-account session."""
+    """Verifies credentials and adds account to multi-account session."""
     finished = Signal(dict)
     error = Signal(str)
 
-    def __init__(self, token: str, label: str = "", parent=None):
+    def __init__(
+        self,
+        token: str = "",
+        label: str = "",
+        auth_method: str = "token",
+        global_api_key: str = "",
+        email: str = "",
+        parent=None,
+    ):
         super().__init__(parent)
         self.token = token
         self.label = label
+        self.auth_method = auth_method
+        self.global_api_key = global_api_key
+        self.email = email
 
     def run(self):
         try:
-            # Verify token directly first
-            verify_res = cf_client.verify_token(token=self.token)
+            # Verify credentials directly first
+            verify_res = cf_client.verify_credentials(
+                auth_method=self.auth_method,
+                token=self.token,
+                global_api_key=self.global_api_key,
+                email=self.email,
+            )
             status = verify_res.get("status", "active")
             
             # Add to in-memory multi-account session
-            account_id = active_session.add_account(label=self.label, token=self.token)
+            account_id = active_session.add_account(
+                label=self.label,
+                token=self.token,
+                auth_method=self.auth_method,
+                global_api_key=self.global_api_key,
+                email=self.email,
+            )
             zones = fetch_all_zones(account_id=account_id)
             
             acc_obj = active_session.active_account
@@ -54,6 +76,10 @@ class ConnectWorker(QThread):
                 "zones": zones,
                 "account_id": account_id,
                 "label": final_label,
+                "auth_method": self.auth_method,
+                "token": self.token,
+                "global_api_key": self.global_api_key,
+                "email": self.email,
                 "message": f"Akun '{final_label}' berhasil terhubung ke Cloudflare API."
             })
         except Exception as exc:
@@ -62,6 +88,7 @@ class ConnectWorker(QThread):
             self.error.emit(err_msg)
         finally:
             self.token = ""
+            self.global_api_key = ""
 
 
 class FetchZonesWorker(QThread):
