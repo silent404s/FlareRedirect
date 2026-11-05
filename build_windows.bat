@@ -75,17 +75,15 @@ if %ERRORLEVEL% NEQ 0 (
 )
 echo Semua pengujian unit tests BERHASIL!
 
-REM 6. Build Executable menggunakan PyInstaller
+REM 6. Build Executable menggunakan Python Build Script (Version Embedded)
 echo.
-echo [6/6] Membangun file mandiri EXE menggunakan PyInstaller...
-echo Mode: Windowed (noconsole), Onefile, Clean...
-
-pyinstaller --noconsole --onefile --name "FlareRedirect" --clean src\main.py
+echo [6/6] Membangun file mandiri EXE dengan nomor versi (build_exe.py)...
+python build_exe.py
 
 if %ERRORLEVEL% NEQ 0 (
     echo.
     echo ====================================================================
-    echo [ERROR] Proses PyInstaller GAGAL!
+    echo [ERROR] Proses Build PyInstaller GAGAL!
     echo ====================================================================
     echo Periksa pesan log di atas untuk informasi kesalahan.
     pause
@@ -95,14 +93,15 @@ if %ERRORLEVEL% NEQ 0 (
 echo.
 if exist "dist\FlareRedirect.exe" (
     echo ====================================================================
-    echo [SUKSES] BUILD BERHASIL DISELESAIKAN!
+    echo [SUKSES] BUILD EXE BERHASIL DISELESAIKAN!
     echo ====================================================================
     echo File Executable Mandiri:
     echo %CD%\dist\FlareRedirect.exe
     echo.
     echo CATATAN PENTING:
     echo - File EXE ini adalah aplikasi mandiri untuk Windows 10/11 64-bit.
-    echo - Token API TIDAK ditanam di dalam executable ini.
+    echo - Metadata versi Windows dan nomor versi file telah ditanamkan ke EXE.
+    echo - Token API TIDAK ditanam di dalam executable ini (aman dari kebocoran).
     echo - Executable ini belum ditandatangani secara digital (Self/Unsigned).
     echo   Jika Windows SmartScreen muncul, klik "More info" -> "Run anyway".
     echo ====================================================================

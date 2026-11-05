@@ -19,12 +19,31 @@ except ImportError:
     pass
 
 
+def _get_app_version() -> str:
+    env_ver = os.getenv("APP_VERSION")
+    if env_ver:
+        return env_ver
+    try:
+        root_dir = Path(__file__).resolve().parent.parent
+        v_file = root_dir / "version.json"
+        if v_file.is_file():
+            import json
+            data = json.loads(v_file.read_text(encoding="utf-8"))
+            return data.get("version", "1.1.0")
+    except Exception:
+        pass
+    return "1.1.0"
+
+
+_APP_VERSION = _get_app_version()
+
+
 class Settings(NamedTuple):
     """Immutable application settings container."""
 
     # Application Metadata
     APP_NAME: str = os.getenv("APP_NAME", "FlareRedirect")
-    APP_VERSION: str = os.getenv("APP_VERSION", "1.1.0")
+    APP_VERSION: str = _APP_VERSION
     APP_ENV: str = os.getenv("APP_ENV", "production")  # production | development | testing
 
     # Cloudflare API Base Endpoint
@@ -41,7 +60,7 @@ class Settings(NamedTuple):
     # User-Agent Header
     USER_AGENT: str = os.getenv(
         "CF_USER_AGENT",
-        f"{os.getenv('APP_NAME', 'FlareRedirect')}/{os.getenv('APP_VERSION', '1.1.0')}",
+        f"{os.getenv('APP_NAME', 'FlareRedirect')}/{_APP_VERSION}",
     )
 
     # Cloudflare API Pagination & Rate Limits

@@ -35,7 +35,17 @@ class MainWindow(QMainWindow):
 
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("FlareRedirect — Cloudflare 301 Engine")
+        from src.config import settings
+        self.setWindowTitle(f"FlareRedirect v{settings.APP_VERSION} — Cloudflare 301 Engine")
+        
+        # Set application icon if available
+        from pathlib import Path
+        icon_path = Path(__file__).resolve().parent.parent / "src" / "app_icon.ico"
+        if not icon_path.exists():
+            icon_path = Path(__file__).resolve().parent / "app_icon.ico"
+        if icon_path.exists():
+            from PySide6.QtGui import QIcon
+            self.setWindowIcon(QIcon(str(icon_path)))
         
         # Responsive sizing tailored for laptop (14 inch) and desktop screens
         screen = QApplication.primaryScreen()
@@ -80,7 +90,7 @@ class MainWindow(QMainWindow):
         brand_box_layout.setSpacing(2)
 
         brand_row = QHBoxLayout()
-        brand_row.setSpacing(8)
+        brand_row.setSpacing(6)
         flame_icon = QLabel("⚡")
         flame_icon.setStyleSheet("font-size: 15px; color: #F38020;")
         brand_row.addWidget(flame_icon)
@@ -88,6 +98,19 @@ class MainWindow(QMainWindow):
         brand_lbl = QLabel("FlareRedirect")
         brand_lbl.setObjectName("SidebarTitle")
         brand_row.addWidget(brand_lbl)
+
+        from src.config import settings
+        ver_badge = QLabel(f"v{settings.APP_VERSION}")
+        ver_badge.setStyleSheet(
+            "background-color: rgba(243, 128, 32, 0.15); "
+            "color: #F38020; "
+            "font-size: 10px; "
+            "font-weight: 700; "
+            "border: 1px solid rgba(243, 128, 32, 0.3); "
+            "border-radius: 4px; "
+            "padding: 1px 5px;"
+        )
+        brand_row.addWidget(ver_badge)
         brand_row.addStretch()
         brand_box_layout.addLayout(brand_row)
 

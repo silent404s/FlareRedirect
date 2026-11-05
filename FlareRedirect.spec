@@ -5,7 +5,7 @@ a = Analysis(
     ['src/main.py'],
     pathex=[],
     binaries=[],
-    datas=[],
+    datas=[('C:/Users/skylark/Documents/SEO Automation Tools/FlareRedirect/src/app_icon.ico', 'src'), ('C:/Users/skylark/Documents/SEO Automation Tools/FlareRedirect/src/app_icon.png', 'src')],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},
@@ -35,4 +35,6 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
+    version='C:/Users/skylark/Documents/SEO Automation Tools/FlareRedirect/file_version_info.txt',
+    icon=['C:/Users/skylark/Documents/SEO Automation Tools/FlareRedirect/src/app_icon.ico'],
 )

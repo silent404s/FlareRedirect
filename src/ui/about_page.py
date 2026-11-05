@@ -45,12 +45,13 @@ class AboutPage(QWidget):
         card_layout = QVBoxLayout(card)
         card_layout.setSpacing(10)
 
-        app_title = QLabel("Cloudflare Redirect Manager")
+        from src.config import settings
+        app_title = QLabel(f"{settings.APP_NAME}")
         app_title.setStyleSheet("font-size: 16px; font-weight: 700; color: #F38020;")
         card_layout.addWidget(app_title)
 
-        app_ver = QLabel("Versi 1.0.0 — Desktop Windows Standalone Edition")
-        app_ver.setStyleSheet("font-size: 12px; color: #94A3B8; font-weight: 500;")
+        app_ver = QLabel(f"Versi {settings.APP_VERSION} — Desktop Windows Standalone Edition")
+        app_ver.setStyleSheet("font-size: 12px; color: #38BDF8; font-weight: 600;")
         card_layout.addWidget(app_ver)
 
         desc = QLabel(
