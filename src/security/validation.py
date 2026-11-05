@@ -13,6 +13,7 @@ Ensures:
 import re
 from urllib.parse import urlsplit
 import idna
+import socket
 from typing import Tuple, Optional, Dict, Any
 import httpx
 from src.utils.errors import ValidationError
@@ -338,4 +339,25 @@ def check_live_http_redirect(domain: str, timeout: float = 3.5) -> Dict[str, Any
         "is_cloudflare": False,
         "error": last_err or "Tidak dapat menghubungi server domain.",
     }
+
+
+def check_domain_public_ip(domain: str) -> str:
+    """Resolves public DNS IPv4 address of domain (FlarePilot architecture)."""
+    try:
+        clean_host = clean_domain_input(domain)
+        return socket.gethostbyname(clean_host)
+    except Exception:
+        return "Gagal Resolusi IP"
+
+
+def is_cloudflare_ip(ip: str) -> bool:
+    """Checks if IP belongs to typical Cloudflare proxy IP prefixes."""
+    if not ip or ip in ("Gagal Resolusi IP", "-"):
+        return False
+    cf_prefixes = (
+        "104.", "172.64.", "172.65.", "172.66.", "172.67.",
+        "172.68.", "172.69.", "172.70.", "172.71.", "188.114.",
+        "162.158.", "162.159.", "190.93.", "197.234.", "198.41."
+    )
+    return any(ip.startswith(p) for p in cf_prefixes)
 

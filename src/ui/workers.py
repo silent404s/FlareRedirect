@@ -5,7 +5,7 @@ Ensures GUI remains responsive at all times and threads do not access UI widgets
 from typing import List, Dict, Any, Optional
 from PySide6.QtCore import QThread, Signal
 from src.cloudflare.client import cf_client
-from src.cloudflare.zones import fetch_all_zones
+from src.cloudflare.zones import fetch_all_zones, find_zone_across_accounts
 from src.cloudflare.redirects import (
     get_zone_redirect_ruleset,
     create_redirect_rule,
@@ -16,7 +16,11 @@ from src.cloudflare.redirects import (
     delete_matching_redirects_for_domain,
 )
 from src.security.session import active_session
-from src.security.validation import check_live_http_redirect
+from src.security.validation import (
+    check_live_http_redirect,
+    check_domain_public_ip,
+    is_cloudflare_ip,
+)
 from src.utils.errors import sanitize_message
 from src.utils.audit import session_audit
 
@@ -257,38 +261,48 @@ class DeleteRedirectWorker(QThread):
 
 
 class PreflightValidationWorker(QThread):
-    """Asynchronously checks live HTTP redirects and Cloudflare rule conflicts
-    for a list of parsed domain items without blocking the UI.
+    """Asynchronously checks live HTTP redirects, public IP resolution, and auto-discovers
+    which Cloudflare account owns the domain across all accounts (FlarePilot architecture).
     """
     progress = Signal(int, int, str)
     finished = Signal(list)
     error = Signal(str)
 
-    def __init__(self, items: List[Dict[str, Any]], target_url: str, parent=None):
+    def __init__(self, raw_domains: List[str], target_url: str, available_zones: Optional[List[Any]] = None, parent=None):
         super().__init__(parent)
-        self.items = items
+        self.raw_domains = raw_domains
         self.target_url = target_url
+        self.available_zones = available_zones or []
 
     def run(self):
         try:
-            total = len(self.items)
+            total = len(self.raw_domains)
             results = []
-            for idx, item in enumerate(self.items, start=1):
-                raw_domain = item["raw_domain"]
-                zone = item.get("zone")
-                self.progress.emit(idx, total, f"Pre-flight check: {raw_domain}")
+            for idx, raw_domain in enumerate(self.raw_domains, start=1):
+                clean_name = raw_domain.strip()
+                self.progress.emit(idx, total, f"Cek IP & Akun CF: {clean_name}")
 
-                # 1. HTTP Live Check
-                http_check = check_live_http_redirect(raw_domain, timeout=2.5)
+                # 1. Resolve Public DNS IP (FlarePilot)
+                public_ip = check_domain_public_ip(clean_name)
+                is_cf_ip = is_cloudflare_ip(public_ip)
 
-                # 2. Cloudflare Conflict & Anomaly Check
-                if zone:
+                # 2. Live HTTP Check
+                http_check = check_live_http_redirect(clean_name, timeout=2.5)
+
+                # 3. Dynamic Auto-Discovery of Cloudflare Account (FlarePilot)
+                acc_id, acc_label, zone, err_msg = find_zone_across_accounts(
+                    domain_string=clean_name,
+                    cached_zones=self.available_zones,
+                )
+
+                # 4. Cloudflare Conflict & Anomaly Check (if zone found)
+                if zone and acc_id:
                     try:
                         cf_conflict = detect_redirect_conflicts(
                             zone_id=zone.id,
-                            source_domain=raw_domain,
+                            source_domain=clean_name,
                             target_url=self.target_url,
-                            account_id=zone.account_id,
+                            account_id=acc_id,
                         )
                     except Exception as exc:
                         cf_conflict = {"status": "ERROR", "is_conflict": False, "message": str(exc), "count": 0}
@@ -296,12 +310,16 @@ class PreflightValidationWorker(QThread):
                     cf_conflict = {
                         "status": "NO_ZONE",
                         "is_conflict": False,
-                        "message": "Zona Cloudflare tidak ditemukan di akun yang terhubung.",
+                        "message": err_msg or "Zona tidak ditemukan di akun Cloudflare manapun.",
                         "count": 0,
                     }
 
                 results.append({
-                    "raw_domain": raw_domain,
+                    "raw_domain": clean_name,
+                    "public_ip": public_ip,
+                    "is_cf_ip": is_cf_ip,
+                    "account_id": acc_id,
+                    "account_label": acc_label or "-",
                     "zone": zone,
                     "target_url": self.target_url,
                     "http_check": http_check,
@@ -314,7 +332,7 @@ class PreflightValidationWorker(QThread):
 
 
 class SinglePreflightWorker(QThread):
-    """Pre-flight check for a single domain redirect."""
+    """Pre-flight check for a single domain redirect with public IP resolution."""
     finished = Signal(dict)
     error = Signal(str)
 
@@ -327,6 +345,7 @@ class SinglePreflightWorker(QThread):
 
     def run(self):
         try:
+            public_ip = check_domain_public_ip(self.domain)
             http_check = check_live_http_redirect(self.domain, timeout=3.0)
             cf_conflict = None
             if self.zone_id and self.target_url:
@@ -337,6 +356,7 @@ class SinglePreflightWorker(QThread):
                     account_id=self.account_id,
                 )
             self.finished.emit({
+                "public_ip": public_ip,
                 "http_check": http_check,
                 "cf_conflict": cf_conflict,
             })

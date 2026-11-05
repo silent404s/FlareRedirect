@@ -216,3 +216,39 @@ def test_bulk_purge_worker_execution(qapp, monkeypatch):
     assert worker.res["success"] == 1
     assert "r1" in deleted_ids
     assert "r2" not in deleted_ids
+
+
+def test_find_zone_across_accounts(monkeypatch):
+    from src.cloudflare.zones import find_zone_across_accounts, ZoneItem
+    from src.security.session import active_session
+
+    active_session.disconnect_all()
+    acc1_id = active_session.add_account(label="Akun Utama", token="tok1")
+    acc2_id = active_session.add_account(label="cf rules nagawin", token="tok2")
+
+    z1 = ZoneItem({"id": "z_gacor", "name": "gacor77terbaik.org"}, account_id=acc1_id, account_label="Akun Utama")
+    z2 = ZoneItem({"id": "z_naga", "name": "nagawin88.com"}, account_id=acc2_id, account_label="cf rules nagawin")
+
+    active_session._accounts[acc1_id].zones = [z1]
+    active_session._accounts[acc2_id].zones = [z2]
+
+    # Test domain from Account 1
+    acc_id, label, found_z, err = find_zone_across_accounts("www.gacor77terbaik.org")
+    assert acc_id == acc1_id
+    assert label == "Akun Utama"
+    assert found_z.id == "z_gacor"
+    assert err is None
+
+    # Test domain from Account 2 (Auto detected without switching active account!)
+    acc_id2, label2, found_z2, err2 = find_zone_across_accounts("https://nagawin88.com/promo")
+    assert acc_id2 == acc2_id
+    assert label2 == "cf rules nagawin"
+    assert found_z2.id == "z_naga"
+    assert err2 is None
+
+    # Test unknown domain
+    acc_id3, label3, found_z3, err3 = find_zone_across_accounts("domain-asing-tidak-ada.xyz")
+    assert found_z3 is None
+    assert "tidak ditemukan" in err3.lower()
+
+    active_session.disconnect_all()

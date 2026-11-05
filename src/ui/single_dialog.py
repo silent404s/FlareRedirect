@@ -167,10 +167,13 @@ class SingleRedirectDialog(QDialog):
         pass
 
     def _on_preflight_finished(self, data: Dict[str, Any]):
+        public_ip = data.get("public_ip", "-")
         http_info = data.get("http_check", {})
         cf_info = data.get("cf_conflict")
 
-        status_lines = []
+        status_lines = [
+            f"• <b>Public IP:</b> <code>{public_ip}</code>"
+        ]
         if http_info.get("has_redirect"):
             loc = http_info.get("location", "-")
             status_lines.append(f"• <b>Live Server:</b> Sudah redirect ({http_info.get('status_code')}) ke <code>{loc}</code>")

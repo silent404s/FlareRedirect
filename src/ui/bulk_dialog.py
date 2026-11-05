@@ -1,9 +1,15 @@
-"""Bulk Redirect Manager Dialog (Simplified 1-Screen Workflow).
-Workflow:
+"""Bulk Redirect Manager Dialog (Simplified 1-Screen Workflow with Multi-Account Auto-Discovery).
+Features:
 1. Target URL Input (at the top).
 2. Domain List Text Area (paste clean domains or raw URLs).
-3. 'Validasi (Pre-check)' Button: Runs live HTTP check and Cloudflare conflict/anomaly detection.
-4. 'Eksekusi 301' Button: Executes batch 301 redirect creation with auto-account resolution.
+3. 'Validasi (Pre-check)' Button:
+   - Resolves Public DNS IP (FlarePilot engine).
+   - Auto-discovers which Cloudflare account owns the domain across all connected accounts.
+   - Live HTTP pre-flight redirect check.
+   - Cloudflare conflict & anomaly detection.
+4. 'Eksekusi 301' Button:
+   - Executes batch 301 redirect creation automatically routed to each domain's respective Cloudflare account.
+   - User NEVER needs to manually switch or select accounts!
 """
 
 from typing import List, Dict, Any, Optional
@@ -40,7 +46,7 @@ from src.ui.workers import (
 
 
 class BulkRedirectDialog(QDialog):
-    """Modern single-screen dialog for batch 301 redirect creation across Cloudflare zones."""
+    """Modern single-screen dialog for batch 301 redirect creation with FlarePilot-style auto account resolution."""
 
     bulk_completed = Signal(int)  # emits number of created rules
 
@@ -53,16 +59,16 @@ class BulkRedirectDialog(QDialog):
 
         self.validated_items: List[Dict[str, Any]] = []
 
-        self.setWindowTitle("⚡ Bulk Redirect Manager — 301 URL Forwarding")
+        self.setWindowTitle("⚡ Bulk Redirect Manager — Multi-Account 301 URL Forwarding")
         screen = QApplication.primaryScreen()
         if screen:
             avail = screen.availableGeometry()
-            target_w = min(960, max(760, int(avail.width() * 0.88)))
-            target_h = min(640, max(480, int(avail.height() * 0.88)))
+            target_w = min(1080, max(820, int(avail.width() * 0.90)))
+            target_h = min(660, max(500, int(avail.height() * 0.90)))
             self.resize(target_w, target_h)
         else:
-            self.resize(880, 580)
-        self.setMinimumSize(720, 460)
+            self.resize(960, 600)
+        self.setMinimumSize(780, 480)
         self.setStyleSheet("""
             QDialog {
                 background-color: #0F172A;
@@ -85,12 +91,13 @@ class BulkRedirectDialog(QDialog):
         h_layout.setContentsMargins(14, 8, 14, 8)
         h_layout.setSpacing(2)
 
-        title_lbl = QLabel("⚡ Bulk Redirect Manager (Batch 301 Forwarding)")
+        title_lbl = QLabel("⚡ Bulk Redirect Manager (Auto Multi-Account Routing)")
         title_lbl.setStyleSheet("font-size: 15px; font-weight: 700; color: #F8FAFC;")
         h_layout.addWidget(title_lbl)
 
         desc_lbl = QLabel(
-            "Terapkan aturan 301 Permanent Redirect ke banyak domain sekaligus dengan deteksi akun otomatis dan pemeriksaan konflik."
+            "Terapkan aturan 301 Permanent Redirect ke banyak domain sekaligus. "
+            "Sistem secara otomatis mendeteksi akun Cloudflare dan IP publik untuk setiap domain tanpa perlu memilih akun secara manual."
         )
         desc_lbl.setStyleSheet("color: #94A3B8; font-size: 11px;")
         h_layout.addWidget(desc_lbl)
@@ -132,7 +139,7 @@ class BulkRedirectDialog(QDialog):
         self.preserve_path_chk.setStyleSheet("color: #94A3B8; font-size: 11px;")
         opts_row.addWidget(self.preserve_path_chk)
 
-        query_info = QLabel("Query String: <b>Nonaktif (False)</b>")
+        query_info = QLabel("Query String: <b>Nonaktif (False)</b> | Status: <b>301 Mutlak</b>")
         query_info.setStyleSheet("color: #64748B; font-size: 11px;")
         opts_row.addStretch()
         opts_row.addWidget(query_info)
@@ -148,26 +155,26 @@ class BulkRedirectDialog(QDialog):
         ib_layout.setSpacing(6)
 
         ib_header = QHBoxLayout()
-        ib_lbl = QLabel("📋 Daftar Domain Asal (Satu per baris, otomatis dibersihkan dari www dan protocol):")
+        ib_lbl = QLabel("📋 Daftar Domain Asal (Satu per baris — bebas dari berbagai akun Cloudflare yang berbeda):")
         ib_lbl.setStyleSheet("color: #CBD5E1; font-weight: 600; font-size: 11px;")
         ib_header.addWidget(ib_lbl)
         ib_header.addStretch()
 
-        self.domain_count_lbl = QLabel("0 baris")
+        self.domain_count_lbl = QLabel("0 domain")
         self.domain_count_lbl.setStyleSheet("color: #94A3B8; font-size: 11px;")
         ib_header.addWidget(self.domain_count_lbl)
         ib_layout.addLayout(ib_header)
 
         self.domain_text_area = QTextEdit()
         self.domain_text_area.setPlaceholderText(
-            "Paste daftar domain di sini...\n"
+            "Paste daftar domain di sini (bisa campuran dari akun Cloudflare mana saja)...\n"
             "gacor77terbaik.org\n"
             "angkapasaranresmi.com\n"
             "www.gacor77.biz\n"
             "https://gacorseo.com/"
         )
-        self.domain_text_area.setMinimumHeight(80)
-        self.domain_text_area.setMaximumHeight(130)
+        self.domain_text_area.setMinimumHeight(75)
+        self.domain_text_area.setMaximumHeight(120)
         self.domain_text_area.setStyleSheet("""
             QTextEdit {
                 background-color: #050811;
@@ -184,7 +191,7 @@ class BulkRedirectDialog(QDialog):
 
         # Validation Bar
         action_row = QHBoxLayout()
-        self.validate_btn = QPushButton("🔍 1. Validasi (Pre-check)")
+        self.validate_btn = QPushButton("🔍 1. Validasi & Auto-Detect Akun")
         self.validate_btn.setProperty("class", "btn-secondary")
         self.validate_btn.setStyleSheet("padding: 6px 14px; font-weight: 700; font-size: 11px;")
         self.validate_btn.clicked.connect(self._run_preflight_validation)
@@ -219,31 +226,33 @@ class BulkRedirectDialog(QDialog):
         prog_layout.addWidget(self.prog_bar)
         main_layout.addWidget(self.prog_frame)
 
-        # 5. Preview Table
+        # 5. Preview Table (7 Kolom: Status, Domain, IP Publik, Akun CF, Status Live HTTP, Target, Status CF)
         self.preview_table = QTableWidget()
-        self.preview_table.setColumnCount(6)
+        self.preview_table.setColumnCount(7)
         self.preview_table.setHorizontalHeaderLabels([
-            "Status", "Domain Asal", "Akun CF Terdeteksi", "Status Live (HTTP)", "Target Baru", "Status Cloudflare"
+            "Status", "Domain Asal", "Public IP", "Akun CF Terdeteksi", "Status Live (HTTP)", "Target Baru", "Status Cloudflare"
         ])
         p_header = self.preview_table.horizontalHeader()
-        p_header.setMinimumSectionSize(60)
+        p_header.setMinimumSectionSize(50)
         p_header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
         p_header.setSectionResizeMode(1, QHeaderView.ResizeMode.Interactive)
         p_header.setSectionResizeMode(2, QHeaderView.ResizeMode.Interactive)
         p_header.setSectionResizeMode(3, QHeaderView.ResizeMode.Interactive)
-        p_header.setSectionResizeMode(4, QHeaderView.ResizeMode.Stretch)
-        p_header.setSectionResizeMode(5, QHeaderView.ResizeMode.Interactive)
-        self.preview_table.setColumnWidth(1, 160)
-        self.preview_table.setColumnWidth(2, 130)
-        self.preview_table.setColumnWidth(3, 140)
-        self.preview_table.setColumnWidth(5, 170)
+        p_header.setSectionResizeMode(4, QHeaderView.ResizeMode.Interactive)
+        p_header.setSectionResizeMode(5, QHeaderView.ResizeMode.Stretch)
+        p_header.setSectionResizeMode(6, QHeaderView.ResizeMode.Interactive)
+        self.preview_table.setColumnWidth(1, 150)
+        self.preview_table.setColumnWidth(2, 115)
+        self.preview_table.setColumnWidth(3, 135)
+        self.preview_table.setColumnWidth(4, 125)
+        self.preview_table.setColumnWidth(6, 175)
         self.preview_table.setAlternatingRowColors(True)
         self.preview_table.verticalHeader().setDefaultSectionSize(26)
         main_layout.addWidget(self.preview_table, stretch=1)
 
         # 6. Footer
         footer_layout = QHBoxLayout()
-        self.footer_lbl = QLabel(f"Total zona domain di sesi: <b>{len(self.zones)}</b>")
+        self.footer_lbl = QLabel(f"Sistem Auto-Detect aktif untuk seluruh akun Cloudflare yang terhubung.")
         self.footer_lbl.setStyleSheet("color: #94A3B8; font-size: 11px;")
         footer_layout.addWidget(self.footer_lbl)
         footer_layout.addStretch()
@@ -254,7 +263,7 @@ class BulkRedirectDialog(QDialog):
         footer_layout.addWidget(self.close_btn)
         main_layout.addLayout(footer_layout)
 
-        # Compatibility attributes for legacy test access
+        # Compatibility attributes for test access
         self.tab2_text = self.domain_text_area
         self.tab2_default_dest = self.target_url_input
         self.tab2_parsed_items: List[Dict[str, Any]] = []
@@ -290,34 +299,24 @@ class BulkRedirectDialog(QDialog):
             QMessageBox.warning(self, "Daftar Domain Kosong", "Silakan masukkan setidaknya satu nama domain pada kotak teks.")
             return
 
-        # Prepare items with zone resolution
-        items_to_validate = []
+        clean_domains = []
         for line in raw_lines:
-            # Handle comment lines
             if line.startswith("#"):
                 continue
-            # Auto-strip any accidental target appended by user like domain -> target or CSV
-            clean_token = line.split("->")[0].split(",")[0].split(" ")[0].strip()
-            try:
-                norm_domain = clean_domain_input(clean_token)
-            except Exception:
-                norm_domain = clean_token.lower()
-
-            matched_zone = find_matching_zone_for_raw(norm_domain, self.zones)
-            items_to_validate.append({
-                "raw_domain": norm_domain,
-                "zone": matched_zone,
-            })
+            clean_token = line.split("->")[0].split(",")[0].split()[0].strip()
+            if clean_token:
+                clean_domains.append(clean_token)
 
         self.validate_btn.setEnabled(False)
         self.execute_btn.setEnabled(False)
         self.prog_frame.show()
-        self.prog_bar.setRange(0, len(items_to_validate))
+        self.prog_bar.setRange(0, len(clean_domains))
         self.prog_bar.setValue(0)
 
         self.preflight_worker = PreflightValidationWorker(
-            items=items_to_validate,
+            raw_domains=clean_domains,
             target_url=norm_target,
+            available_zones=self.zones,
             parent=self,
         )
         self.preflight_worker.progress.connect(self._on_preflight_progress)
@@ -339,37 +338,41 @@ class BulkRedirectDialog(QDialog):
 
         valid_count = 0
         anomaly_count = 0
+        detected_accounts = set()
 
-        # Also populate tab2_parsed_items for backward test compatibility
+        # Populate tab2_parsed_items for backward test compatibility
         self.tab2_parsed_items = []
 
         for row, item in enumerate(validated_items):
             domain = item["raw_domain"]
-            zone = item["zone"]
-            http_info = item["http_check"]
-            cf_info = item["cf_conflict"]
+            public_ip = item.get("public_ip", "-")
+            is_cf_ip = item.get("is_cf_ip", False)
+            acc_label = item.get("account_label", "-")
+            zone = item.get("zone")
+            http_info = item.get("http_check", {})
+            cf_info = item.get("cf_conflict", {})
 
             has_zone = zone is not None
             c_status = cf_info.get("status")
 
             if has_zone:
                 valid_count += 1
+                detected_accounts.add(acc_label)
             if c_status == "REDFLAG_ANOMALY":
                 anomaly_count += 1
 
-            # Backward test compatibility entry
             self.tab2_parsed_items.append({
                 "source": domain,
                 "destination": item["target_url"],
                 "status_code": 301,
                 "valid": has_zone,
                 "zone_id": zone.id if zone else None,
-                "reason": "OK" if has_zone else "Zona tidak ditemukan",
+                "reason": "OK" if has_zone else "Zona tidak ditemukan di akun manapun",
             })
 
-            # Column 0: Status
+            # Col 0: Status
             if not has_zone:
-                st_item = QTableWidgetItem("✕ No Zone")
+                st_item = QTableWidgetItem("✕ No Account")
                 st_item.setForeground(QColor("#EF4444"))
             elif c_status == "REDFLAG_ANOMALY":
                 st_item = QTableWidgetItem("⚠️ Redflag")
@@ -378,24 +381,37 @@ class BulkRedirectDialog(QDialog):
                 st_item = QTableWidgetItem("● Duplikat")
                 st_item.setForeground(QColor("#FBBF24"))
             else:
-                st_item = QTableWidgetItem("✓ Valid")
+                st_item = QTableWidgetItem("✓ Siap (CF)")
                 st_item.setForeground(QColor("#34D399"))
             st_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
             self.preview_table.setItem(row, 0, st_item)
 
-            # Column 1: Domain
+            # Col 1: Domain
             d_item = QTableWidgetItem(domain)
             d_item.setFont(mono_font)
             d_item.setForeground(QColor("#F8FAFC"))
             self.preview_table.setItem(row, 1, d_item)
 
-            # Column 2: CF Account
-            acc_name = zone.account_label if zone else "-"
-            acc_item = QTableWidgetItem(acc_name)
-            acc_item.setForeground(QColor("#38BDF8" if zone else "#64748B"))
-            self.preview_table.setItem(row, 2, acc_item)
+            # Col 2: Public IP (FlarePilot)
+            ip_item = QTableWidgetItem(public_ip)
+            ip_item.setFont(mono_font)
+            if is_cf_ip:
+                ip_item.setForeground(QColor("#34D399"))
+                ip_item.setToolTip(f"{public_ip} (Cloudflare Proxy Aktif)")
+            elif public_ip in ("Gagal Resolusi IP", "-"):
+                ip_item.setForeground(QColor("#FBBF24"))
+                ip_item.setToolTip("Tidak dapat meresolusi IP publik domain.")
+            else:
+                ip_item.setForeground(QColor("#38BDF8"))
+                ip_item.setToolTip(f"{public_ip} (Origin / Direct IP)")
+            self.preview_table.setItem(row, 2, ip_item)
 
-            # Column 3: Live HTTP Status
+            # Col 3: Detected Cloudflare Account
+            acc_item = QTableWidgetItem(f"👤 {acc_label}" if has_zone else "✕ Tidak Ditemukan")
+            acc_item.setForeground(QColor("#38BDF8" if has_zone else "#64748B"))
+            self.preview_table.setItem(row, 3, acc_item)
+
+            # Col 4: Live HTTP Status
             if http_info.get("has_redirect"):
                 live_text = f"Redirect ({http_info.get('status_code')})"
                 live_color = "#38BDF8"
@@ -408,22 +424,23 @@ class BulkRedirectDialog(QDialog):
             live_item = QTableWidgetItem(live_text)
             live_item.setForeground(QColor(live_color))
             live_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-            self.preview_table.setItem(row, 3, live_item)
+            self.preview_table.setItem(row, 4, live_item)
 
-            # Column 4: Target Baru
+            # Col 5: Target Baru
             t_item = QTableWidgetItem(item["target_url"])
             t_item.setFont(mono_font)
             t_item.setForeground(QColor("#CBD5E1"))
-            self.preview_table.setItem(row, 4, t_item)
+            self.preview_table.setItem(row, 5, t_item)
 
-            # Column 5: Status Cloudflare Conflict
+            # Col 6: Status Cloudflare Conflict
             cf_text = cf_info.get("message", "-")
             cf_item = QTableWidgetItem(cf_text)
             cf_color = "#34D399" if c_status == "CLEAR" else ("#F87171" if c_status == "REDFLAG_ANOMALY" else "#FBBF24")
             cf_item.setForeground(QColor(cf_color))
-            self.preview_table.setItem(row, 5, cf_item)
+            self.preview_table.setItem(row, 6, cf_item)
 
-        summary_msg = f"Hasil Validasi: {valid_count} domain siap diproses."
+        acc_summary = f"{len(detected_accounts)} akun CF terdeteksi"
+        summary_msg = f"Hasil: {valid_count} domain siap ({acc_summary})."
         if anomaly_count > 0:
             summary_msg += f" (⚠️ {anomaly_count} Redflag terdeteksi — akan dibersihkan otomatis)"
         self.val_summary_lbl.setText(summary_msg)
@@ -439,12 +456,18 @@ class BulkRedirectDialog(QDialog):
 
     def _execute_bulk_redirect(self):
         items_to_create = []
+        accounts_involved = set()
+
         for item in self.validated_items:
             zone = item.get("zone")
-            if zone:
+            acc_id = item.get("account_id")
+            if zone and acc_id:
+                acc_label = item.get("account_label") or "Akun Cloudflare"
+                accounts_involved.add(acc_label)
                 items_to_create.append({
                     "zone_id": zone.id,
-                    "account_id": zone.account_id,
+                    "account_id": acc_id,
+                    "account_label": acc_label,
                     "source_hostname": item["raw_domain"],
                     "destination_url": item["target_url"],
                     "coverage": "both",
@@ -455,15 +478,21 @@ class BulkRedirectDialog(QDialog):
                 })
 
         if not items_to_create:
-            QMessageBox.warning(self, "Tidak Ada Domain Valid", "Tidak ada domain terhubung dengan zona Cloudflare yang valid untuk dieksekusi.")
+            QMessageBox.warning(
+                self,
+                "Tidak Ada Domain Valid",
+                "Tidak ada domain yang terhubung dengan akun Cloudflare aktif untuk dieksekusi."
+            )
             return
 
+        acc_list_str = "\n".join([f"• {a}" for a in accounts_involved])
         confirm = QMessageBox.question(
             self,
-            "Konfirmasi Eksekusi Bulk 301",
-            f"Anda akan menerapkan aturan 301 Redirect ke {len(items_to_create)} domain Cloudflare.\n\n"
+            "Konfirmasi Eksekusi Auto Multi-Account",
+            f"Anda akan menerapkan aturan 301 Redirect ke {len(items_to_create)} domain.\n\n"
+            f"Akun Cloudflare yang otomatis memproses:\n{acc_list_str}\n\n"
             "Aturan lama/anomali pada domain-domain ini akan otomatis dibersihkan dan digantikan dengan rule baru.\n\n"
-            "Lanjutkan?",
+            "Lanjutkan eksekusi?",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
         )
         if confirm != QMessageBox.StandardButton.Yes:
@@ -518,7 +547,6 @@ class BulkRedirectDialog(QDialog):
         self.domain_text_area.setPlainText("\n".join(formatted))
         self._parse_tab2_text()
 
-    # Legacy helper for test compatibility
     def _parse_tab2_text(self):
         target = self.tab2_default_dest.text().strip() or "https://default.com/"
         raw_lines = [line.strip() for line in self.tab2_text.toPlainText().splitlines() if line.strip()]
@@ -526,7 +554,6 @@ class BulkRedirectDialog(QDialog):
         for line in raw_lines:
             if line.startswith("#"):
                 continue
-            # Parse possible custom destination or CSV
             if "->" in line:
                 parts = line.split("->")
                 src = parts[0].strip()

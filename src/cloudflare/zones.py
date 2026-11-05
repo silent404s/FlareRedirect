@@ -3,7 +3,7 @@ Handles listing zones, pagination, status filtering, multi-account aggregation,
 and matching hostnames to zones.
 """
 
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Tuple
 from src.config import settings
 from src.cloudflare.client import cf_client
 from src.security.session import active_session
@@ -126,6 +126,67 @@ def find_matching_zone_for_raw(raw_domain: str, available_zones: List[ZoneItem])
         return find_matching_zone(clean, available_zones)
     except Exception:
         return None
+
+
+def find_zone_across_accounts(
+    domain_string: str,
+    cached_zones: Optional[List[ZoneItem]] = None,
+) -> Tuple[Optional[str], Optional[str], Optional[ZoneItem], Optional[str]]:
+    """Searches across all connected Cloudflare accounts (FlarePilot architecture).
+    1. First checks in-memory cache of zones across all connected accounts.
+    2. If not found in cache, generates parent domain candidates and queries Cloudflare API
+       directly for each connected account.
+    Returns:
+        (account_id, account_label, zone_item, error_msg)
+    """
+    try:
+        clean = clean_domain_input(domain_string)
+    except Exception as exc:
+        return None, None, None, f"Format domain tidak valid: {str(exc)}"
+
+    accounts = active_session.get_all_accounts()
+    if not accounts:
+        return None, None, None, "Belum ada akun Cloudflare yang terhubung dalam sesi."
+
+    # 1. Check in all cached zones
+    all_cached: List[ZoneItem] = list(cached_zones or [])
+    for acc in accounts:
+        for z in acc.zones:
+            if not any(cz.id == z.id for cz in all_cached):
+                all_cached.append(z)
+
+    match = find_matching_zone(clean, all_cached)
+    if match and match.account_id:
+        acc_label = match.account_label
+        for acc in accounts:
+            if acc.account_id == match.account_id:
+                acc_label = acc.label
+                break
+        return match.account_id, acc_label, match, None
+
+    # 2. Live API search across all connected accounts
+    parts = clean.split(".")
+    if len(parts) < 2:
+        return None, None, None, f"Nama domain tidak lengkap: '{clean}'"
+
+    candidates = [".".join(parts[i:]) for i in range(len(parts) - 1)]
+
+    for acc in accounts:
+        for cand in candidates:
+            try:
+                res = cf_client.request("GET", f"zones?name={cand}", account_id=acc.account_id)
+                results = res.get("result", [])
+                if results:
+                    raw_zone = results[0]
+                    found_zone = ZoneItem(raw_zone, account_id=acc.account_id, account_label=acc.label)
+                    # Cache in account for subsequent lookups
+                    if not any(z.id == found_zone.id for z in acc.zones):
+                        acc.zones.append(found_zone)
+                    return acc.account_id, acc.label, found_zone, None
+            except Exception:
+                continue
+
+    return None, None, None, f"Domain '{clean}' tidak ditemukan pada akun Cloudflare manapun."
 
 
 def resolve_account_for_zone(zone_id: str, available_zones: List[ZoneItem]) -> Optional[str]:

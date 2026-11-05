@@ -10,6 +10,8 @@ from src.security.validation import (
     validate_status_code,
     escape_cloudflare_string,
     check_live_http_redirect,
+    check_domain_public_ip,
+    is_cloudflare_ip,
 )
 from src.utils.errors import ValidationError
 
@@ -118,3 +120,22 @@ def test_clean_domain_input():
 
     with pytest.raises(ValidationError):
         clean_domain_input("")
+
+
+def test_check_domain_public_ip(monkeypatch):
+    monkeypatch.setattr("socket.gethostbyname", lambda host: "104.21.48.12")
+    ip = check_domain_public_ip("example.com")
+    assert ip == "104.21.48.12"
+
+    monkeypatch.setattr("socket.gethostbyname", lambda host: (_ for _ in ()).throw(Exception("DNS Fail")))
+    ip_fail = check_domain_public_ip("invalid-domain-xyz.com")
+    assert ip_fail == "Gagal Resolusi IP"
+
+
+def test_is_cloudflare_ip():
+    assert is_cloudflare_ip("104.21.48.12") is True
+    assert is_cloudflare_ip("172.67.180.2") is True
+    assert is_cloudflare_ip("188.114.96.1") is True
+    assert is_cloudflare_ip("1.1.1.1") is False
+    assert is_cloudflare_ip("8.8.8.8") is False
+    assert is_cloudflare_ip("Gagal Resolusi IP") is False
