@@ -1,0 +1,33 @@
+# Python bytecode and cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Environments & Secrets
+.env
+.env.local
+.venv
+env/
+venv/
+ENV/
+
+# PyInstaller / Build outputs
+build/
+dist/
+*.egg-info/
+*.zip
+
+# Testing & Coverage
+.pytest_cache/
+.coverage
+htmlcov/
+
+# IDE & OS files
+.vscode/
+.idea/
+*.swp
+*.swo
+Thumbs.db
+desktop.ini
+.DS_Store
