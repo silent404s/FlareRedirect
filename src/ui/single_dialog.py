@@ -244,3 +244,4 @@ class SingleRedirectDialog(QDialog):
         self.submit_btn.setEnabled(True)
         self.cancel_btn.setEnabled(True)
         QMessageBox.critical(self, "Gagal Menerapkan Redirect", f"Terjadi kesalahan:\n\n{err_msg}")
+
