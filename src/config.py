@@ -29,10 +29,10 @@ def _get_app_version() -> str:
         if v_file.is_file():
             import json
             data = json.loads(v_file.read_text(encoding="utf-8"))
-            return data.get("version", "1.3.0")
+            return data.get("version", "1.3.1")
     except Exception:
         pass
-    return "1.3.0"
+    return "1.3.1"
 
 
 _APP_VERSION = _get_app_version()

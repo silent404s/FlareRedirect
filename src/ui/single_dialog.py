@@ -206,19 +206,9 @@ class SingleRedirectDialog(QDialog):
         pass
 
     def _on_preflight_finished(self, data: Dict[str, Any]):
-        public_ip = data.get("public_ip", "-")
-        http_info = data.get("http_check", {})
         cf_info = data.get("cf_conflict")
 
-        status_lines = [
-            f"• <b>Public IP:</b> <code>{public_ip}</code>"
-        ]
-        if http_info.get("has_redirect"):
-            loc = http_info.get("location", "-")
-            status_lines.append(f"• <b>Live Server:</b> Sudah redirect ({http_info.get('status_code')}) ke <code>{loc}</code>")
-        else:
-            status_lines.append("• <b>Live Server:</b> Tidak ada redirect aktif di level web server (Aman).")
-
+        status_lines = []
         if cf_info:
             c_status = cf_info.get("status")
             if c_status == "REDFLAG_ANOMALY":
@@ -229,6 +219,8 @@ class SingleRedirectDialog(QDialog):
                 status_lines.append(f"• <b>Cloudflare Rules:</b> Ada 1 aturan lama (akan diperbarui ke target baru).")
             elif c_status == "CLEAR":
                 status_lines.append("• <b>Cloudflare Rules:</b> <span style='color: #34D399;'>Zona bersih, siap pasang rule baru.</span>")
+        else:
+            status_lines.append("• <b>Cloudflare:</b> Siap membuat aturan 301 Redirect.")
 
         self.status_lbl.setText("<br>".join(status_lines))
 

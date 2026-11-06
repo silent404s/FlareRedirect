@@ -1,9 +1,9 @@
-# ⚡ FlareRedirect (v1.3.0)
+# ⚡ FlareRedirect (v1.3.1)
 > **High Performance Cloudflare 301 Permanent Redirect Engine**  
 > Kelola ratusan aturan *Single Redirects (301 Permanent URL Forwarding)* di Cloudflare secara instan, aman, dan tanpa perantara pihak ketiga.
 
 [![Platform](https://img.shields.io/badge/Platform-Windows%2010%20%7C%2011%20(64--bit)-blue.svg)](#)
-[![Version](https://img.shields.io/badge/Version-v1.3.0-orange.svg)](#)
+[![Version](https://img.shields.io/badge/Version-v1.3.1-orange.svg)](#)
 [![Python](https://img.shields.io/badge/Python-3.12%20%7C%203.14-green.svg)](#)
 [![GUI](https://img.shields.io/badge/GUI-PySide6%20Qt-blueviolet.svg)](#)
 [![License](https://img.shields.io/badge/License-MIT-brightgreen.svg)](#)
@@ -16,11 +16,11 @@
 1. **Unduh / Buka Executable Berlabel Versi:**
    - Gunakan file versi terbaru di folder `dist/`:
      ```text
-     dist\FlareRedirect_v1.3.0.exe
+     dist\FlareRedirect_v1.3.1.exe
      ```
    - *(Setiap versi rilis selalu memiliki penamaan tag versi yang jelas)*.
 2. **Jalankan Aplikasi:**
-   - Klik dua kali pada `FlareRedirect_v1.3.0.exe`.
+   - Klik dua kali pada `FlareRedirect_v1.3.1.exe`.
    - *(Jika muncul Windows SmartScreen, klik **More info** &rarr; **Run anyway**)*.
 3. **Hubungkan Akun Cloudflare:**
    - Masuk ke menu **🔑 Kelola Akun** di pojok kanan atas.
@@ -79,11 +79,11 @@ python build_exe.py
 ```
 
 Skrip ini secara otomatis:
-1. Membaca nomor versi dari `version.json` (saat ini `v1.3.0`).
-2. Menanamkan metadata resource Windows (*File Version: 1.3.0.0, Product Version: 1.3.0.0, Icon*).
+1. Membaca nomor versi dari `version.json` (saat ini `v1.3.1`).
+2. Menanamkan metadata resource Windows (*File Version: 1.3.1.0, Product Version: 1.3.1.0, Icon*).
 3. Mengemas aplikasi menjadi standalone executable tanpa konsol CMD.
 4. Menghasilkan file output berlabel versi resmi di folder `dist/`:
-   - `dist\FlareRedirect_v1.3.0.exe` (Selalu berlabel tag versi)
+   - `dist\FlareRedirect_v1.3.1.exe` (Selalu berlabel tag versi)
 
 ---
 

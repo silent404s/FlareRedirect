@@ -227,26 +227,22 @@ class BulkRedirectDialog(QDialog):
         prog_layout.addWidget(self.prog_bar)
         main_layout.addWidget(self.prog_frame)
 
-        # 5. Preview Table (7 Kolom: Status, Domain, IP Publik, Akun CF, Status Live HTTP, Target, Status CF)
+        # 5. Preview Table (5 Kolom: Status, Domain, Akun CF Terdeteksi, Target Baru, Status CF)
         self.preview_table = QTableWidget()
-        self.preview_table.setColumnCount(7)
+        self.preview_table.setColumnCount(5)
         self.preview_table.setHorizontalHeaderLabels([
-            "Status", "Domain Asal", "Public IP", "Akun CF Terdeteksi", "Status Live (HTTP)", "Target Baru", "Status Cloudflare"
+            "Status", "Domain Asal", "Akun Cloudflare Terdeteksi", "Target Baru (301)", "Status Cloudflare"
         ])
         p_header = self.preview_table.horizontalHeader()
         p_header.setMinimumSectionSize(50)
         p_header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
         p_header.setSectionResizeMode(1, QHeaderView.ResizeMode.Interactive)
         p_header.setSectionResizeMode(2, QHeaderView.ResizeMode.Interactive)
-        p_header.setSectionResizeMode(3, QHeaderView.ResizeMode.Interactive)
+        p_header.setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
         p_header.setSectionResizeMode(4, QHeaderView.ResizeMode.Interactive)
-        p_header.setSectionResizeMode(5, QHeaderView.ResizeMode.Stretch)
-        p_header.setSectionResizeMode(6, QHeaderView.ResizeMode.Interactive)
-        self.preview_table.setColumnWidth(1, 150)
-        self.preview_table.setColumnWidth(2, 115)
-        self.preview_table.setColumnWidth(3, 135)
-        self.preview_table.setColumnWidth(4, 125)
-        self.preview_table.setColumnWidth(6, 175)
+        self.preview_table.setColumnWidth(1, 180)
+        self.preview_table.setColumnWidth(2, 170)
+        self.preview_table.setColumnWidth(4, 220)
         self.preview_table.setAlternatingRowColors(True)
         self.preview_table.verticalHeader().setDefaultSectionSize(26)
         main_layout.addWidget(self.preview_table, stretch=1)
@@ -346,11 +342,8 @@ class BulkRedirectDialog(QDialog):
 
         for row, item in enumerate(validated_items):
             domain = item["raw_domain"]
-            public_ip = item.get("public_ip", "-")
-            is_cf_ip = item.get("is_cf_ip", False)
             acc_label = item.get("account_label", "-")
             zone = item.get("zone")
-            http_info = item.get("http_check", {})
             cf_info = item.get("cf_conflict", {})
 
             has_zone = zone is not None
@@ -382,63 +375,34 @@ class BulkRedirectDialog(QDialog):
                 st_item = QTableWidgetItem("● Duplikat")
                 st_item.setForeground(QColor("#FBBF24"))
             else:
-                st_item = QTableWidgetItem("✓ Siap (CF)")
+                st_item = QTableWidgetItem("✓ Siap")
                 st_item.setForeground(QColor("#34D399"))
             st_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
             self.preview_table.setItem(row, 0, st_item)
 
-            # Col 1: Domain
+            # Col 1: Domain Asal
             d_item = QTableWidgetItem(domain)
             d_item.setFont(mono_font)
             d_item.setForeground(QColor("#F8FAFC"))
             self.preview_table.setItem(row, 1, d_item)
 
-            # Col 2: Public IP (FlarePilot)
-            ip_item = QTableWidgetItem(public_ip)
-            ip_item.setFont(mono_font)
-            if is_cf_ip:
-                ip_item.setForeground(QColor("#34D399"))
-                ip_item.setToolTip(f"{public_ip} (Cloudflare Proxy Aktif)")
-            elif public_ip in ("Gagal Resolusi IP", "-"):
-                ip_item.setForeground(QColor("#FBBF24"))
-                ip_item.setToolTip("Tidak dapat meresolusi IP publik domain.")
-            else:
-                ip_item.setForeground(QColor("#38BDF8"))
-                ip_item.setToolTip(f"{public_ip} (Origin / Direct IP)")
-            self.preview_table.setItem(row, 2, ip_item)
-
-            # Col 3: Detected Cloudflare Account
+            # Col 2: Detected Cloudflare Account
             acc_item = QTableWidgetItem(f"👤 {acc_label}" if has_zone else "✕ Tidak Ditemukan")
             acc_item.setForeground(QColor("#38BDF8" if has_zone else "#64748B"))
-            self.preview_table.setItem(row, 3, acc_item)
+            self.preview_table.setItem(row, 2, acc_item)
 
-            # Col 4: Live HTTP Status
-            if http_info.get("has_redirect"):
-                live_text = f"Redirect ({http_info.get('status_code')})"
-                live_color = "#38BDF8"
-            elif http_info.get("status_code"):
-                live_text = f"HTTP {http_info.get('status_code')}"
-                live_color = "#94A3B8"
-            else:
-                live_text = "Offline / Gagal"
-                live_color = "#64748B"
-            live_item = QTableWidgetItem(live_text)
-            live_item.setForeground(QColor(live_color))
-            live_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-            self.preview_table.setItem(row, 4, live_item)
-
-            # Col 5: Target Baru
+            # Col 3: Target Baru
             t_item = QTableWidgetItem(item["target_url"])
             t_item.setFont(mono_font)
             t_item.setForeground(QColor("#CBD5E1"))
-            self.preview_table.setItem(row, 5, t_item)
+            self.preview_table.setItem(row, 3, t_item)
 
-            # Col 6: Status Cloudflare Conflict
+            # Col 4: Status Cloudflare Conflict
             cf_text = cf_info.get("message", "-")
             cf_item = QTableWidgetItem(cf_text)
             cf_color = "#34D399" if c_status == "CLEAR" else ("#F87171" if c_status == "REDFLAG_ANOMALY" else "#FBBF24")
             cf_item.setForeground(QColor(cf_color))
-            self.preview_table.setItem(row, 6, cf_item)
+            self.preview_table.setItem(row, 4, cf_item)
 
         acc_summary = f"{len(detected_accounts)} akun CF terdeteksi"
         summary_msg = f"Hasil: {valid_count} domain siap ({acc_summary})."

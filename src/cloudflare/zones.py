@@ -11,29 +11,25 @@ from src.security.validation import normalize_hostname, clean_domain_input
 
 
 class ZoneItem:
+    """Minimal zone item representing only essential domain & account routing data."""
+
     def __init__(self, data: Dict[str, Any], account_id: str = "", account_label: str = ""):
         self.id: str = data.get("id", "")
         self.name: str = data.get("name", "")
         self.status: str = data.get("status", "unknown")
-        self.paused: bool = data.get("paused", False)
-        plan_data = data.get("plan", {})
-        if "plan_name" in data and isinstance(data["plan_name"], str):
-            self.plan_name: str = data["plan_name"]
-        else:
-            self.plan_name: str = plan_data.get("name", "Free") if isinstance(plan_data, dict) else "Free"
-        name_servers = data.get("name_servers", [])
-        self.name_servers: List[str] = name_servers if isinstance(name_servers, list) else []
         self.account_id: str = account_id or data.get("account_id", "")
         self.account_label: str = account_label or data.get("account_label", "Akun Utama")
+        # Lightweight compatibility fallbacks
+        self.plan_name: str = data.get("plan_name") or "Free"
+        self.name_servers: List[str] = data.get("name_servers") or []
+        self.paused: bool = data.get("paused", False)
 
     def to_dict(self) -> Dict[str, Any]:
+        """Returns minimal representation containing only required fields for domain resolution and redirection."""
         return {
             "id": self.id,
             "name": self.name,
             "status": self.status,
-            "paused": self.paused,
-            "plan_name": self.plan_name,
-            "name_servers": self.name_servers,
             "account_id": self.account_id,
             "account_label": self.account_label,
         }

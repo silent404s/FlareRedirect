@@ -122,7 +122,25 @@ class CloudflareClient:
         return data
 
     def verify_token(self, token: Optional[str] = None) -> Dict[str, Any]:
-        """Tests the token connection using /user/tokens/verify."""
+        """Tests the token connection using minimal scope (GET /zones?per_page=1).
+        Does NOT rely on /user/tokens/verify which throws HTTP 403 on standard Zone-scoped tokens.
+        """
+        client = self._get_client()
+        headers = self._get_auth_headers(token_override=token)
+
+        try:
+            # 1. Primary check: GET /zones?per_page=1 (Minimal required scope for domain management)
+            res = client.get("zones", params={"per_page": 1}, headers=headers)
+            if res.status_code == 200:
+                data = res.json()
+                if data.get("success", False):
+                    return {"status": "active", "auth_method": "token"}
+            elif res.status_code == 401:
+                raise AuthenticationError("Autentikasi gagal (HTTP 401). API Token Cloudflare tidak valid atau sudah kadaluarsa.")
+        except (httpx.TimeoutException, httpx.ConnectError) as exc:
+            raise NetworkError(f"Gagal menghubungi Cloudflare API: {sanitize_message(str(exc))}")
+
+        # 2. Fallback to /user/tokens/verify only if /zones was not 200
         res = self.request("GET", "user/tokens/verify", token_override=token)
         return res.get("result", {})
 
@@ -133,11 +151,14 @@ class CloudflareClient:
         global_api_key: Optional[str] = None,
         email: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """Tests credentials using tokens/verify or accounts endpoint."""
+        """Tests credentials using minimal scope (GET /zones?per_page=1).
+        Prevents HTTP 403 errors by only requesting the zones endpoint required for domain management.
+        """
+        client = self._get_client()
+
         if auth_method == "key":
             if not global_api_key or not email:
                 raise AuthenticationError("Global API Key dan Email wajib diisi.")
-            client = self._get_client()
             headers = {
                 "X-Auth-Key": global_api_key.strip(),
                 "X-Auth-Email": email.strip(),
@@ -145,18 +166,27 @@ class CloudflareClient:
                 "User-Agent": settings.USER_AGENT,
             }
             try:
-                res = client.get("accounts", headers=headers)
-            except httpx.RequestError as exc:
-                clean_err = sanitize_message(str(exc))
-                raise NetworkError(f"Gagal menghubungi Cloudflare: {clean_err}")
+                res = client.get("zones", params={"per_page": 1}, headers=headers)
+                if res.status_code == 200:
+                    data = res.json()
+                    if data.get("success", False):
+                        return {"status": "active", "auth_method": "key"}
 
-            if res.status_code == 200:
-                data = res.json()
-                if data.get("success", False):
-                    return {"status": "active", "accounts": data.get("result", [])}
-            raise AuthenticationError("Autentikasi Cloudflare gagal (Global API Key atau Email salah).")
+                # Fallback to accounts if zones check fails
+                res_acc = client.get("accounts", headers=headers)
+                if res_acc.status_code == 200 and res_acc.json().get("success", False):
+                    return {"status": "active", "auth_method": "key", "accounts": res_acc.json().get("result", [])}
+
+                if res.status_code in (401, 403):
+                    raise AuthenticationError("Autentikasi Cloudflare gagal (Global API Key atau Email salah).")
+                raise AuthenticationError("Koneksi gagal ke Cloudflare API.")
+            except (httpx.TimeoutException, httpx.ConnectError) as exc:
+                raise NetworkError(f"Gagal menghubungi Cloudflare: {sanitize_message(str(exc))}")
+
         else:
-            return self.verify_token(token=token)
+            if not token or not token.strip():
+                raise AuthenticationError("API Token Cloudflare wajib diisi.")
+            return self.verify_token(token=token.strip())
 
     def close(self):
         """Closes the underlying HTTP client connection pool."""

@@ -307,22 +307,15 @@ class PreflightValidationWorker(QThread):
             results = []
             for idx, raw_domain in enumerate(self.raw_domains, start=1):
                 clean_name = raw_domain.strip()
-                self.progress.emit(idx, total, f"Cek IP & Akun CF: {clean_name}")
+                self.progress.emit(idx, total, f"Mencocokkan Akun CF: {clean_name}")
 
-                # 1. Resolve Public DNS IP (FlarePilot)
-                public_ip = check_domain_public_ip(clean_name)
-                is_cf_ip = is_cloudflare_ip(public_ip)
-
-                # 2. Live HTTP Check
-                http_check = check_live_http_redirect(clean_name, timeout=2.5)
-
-                # 3. Dynamic Auto-Discovery of Cloudflare Account (FlarePilot)
+                # 1. Dynamic Auto-Discovery of Cloudflare Account (Match domain to account)
                 acc_id, acc_label, zone, err_msg = find_zone_across_accounts(
                     domain_string=clean_name,
                     cached_zones=self.available_zones,
                 )
 
-                # 4. Cloudflare Conflict & Anomaly Check (if zone found)
+                # 2. Cloudflare Conflict & Rule Check (if zone found)
                 if zone and acc_id:
                     try:
                         cf_conflict = detect_redirect_conflicts(
@@ -343,13 +336,10 @@ class PreflightValidationWorker(QThread):
 
                 results.append({
                     "raw_domain": clean_name,
-                    "public_ip": public_ip,
-                    "is_cf_ip": is_cf_ip,
                     "account_id": acc_id,
                     "account_label": acc_label or "-",
                     "zone": zone,
                     "target_url": self.target_url,
-                    "http_check": http_check,
                     "cf_conflict": cf_conflict,
                 })
 
@@ -359,7 +349,7 @@ class PreflightValidationWorker(QThread):
 
 
 class SinglePreflightWorker(QThread):
-    """Pre-flight check for a single domain redirect with public IP resolution."""
+    """Pre-flight check for a single domain redirect verifying Cloudflare rules."""
     finished = Signal(dict)
     error = Signal(str)
 
@@ -372,8 +362,6 @@ class SinglePreflightWorker(QThread):
 
     def run(self):
         try:
-            public_ip = check_domain_public_ip(self.domain)
-            http_check = check_live_http_redirect(self.domain, timeout=3.0)
             cf_conflict = None
             if self.zone_id and self.target_url:
                 cf_conflict = detect_redirect_conflicts(
@@ -383,8 +371,6 @@ class SinglePreflightWorker(QThread):
                     account_id=self.account_id,
                 )
             self.finished.emit({
-                "public_ip": public_ip,
-                "http_check": http_check,
                 "cf_conflict": cf_conflict,
             })
         except Exception as exc:

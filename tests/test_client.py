@@ -120,3 +120,26 @@ def test_delete_redirect_rule_reverification_not_found():
         with pytest.raises(NotFoundError, match="tidak ditemukan lagi"):
             delete_redirect_rule("zone1", "ruleset1", "rule_not_exist")
 
+
+def test_verify_credentials_minimal_scope():
+    client = CloudflareClient()
+    mock_resp = httpx.Response(200, json={"success": True, "result": [{"id": "z1", "name": "example.com"}]})
+
+    with patch.object(httpx.Client, "get", return_value=mock_resp) as mock_get:
+        res = client.verify_credentials(auth_method="token", token="scoped_zone_token_123")
+        assert res["status"] == "active"
+        # Ensure it requested /zones with per_page=1 and NOT /user/tokens/verify
+        assert mock_get.called
+        call_url = mock_get.call_args[0][0]
+        assert "zones" in call_url
+
+
+def test_verify_credentials_global_key():
+    client = CloudflareClient()
+    mock_resp = httpx.Response(200, json={"success": True, "result": [{"id": "z1"}]})
+
+    with patch.object(httpx.Client, "get", return_value=mock_resp):
+        res = client.verify_credentials(auth_method="key", global_api_key="global123", email="user@domain.com")
+        assert res["status"] == "active"
+
+

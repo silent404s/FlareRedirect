@@ -194,7 +194,13 @@ def save_cached_domains(
             if hasattr(z, "to_dict"):
                 serialized_zones.append(z.to_dict())
             elif isinstance(z, dict):
-                serialized_zones.append(z)
+                serialized_zones.append({
+                    "id": z.get("id", ""),
+                    "name": z.get("name", ""),
+                    "status": z.get("status", "unknown"),
+                    "account_id": z.get("account_id", ""),
+                    "account_label": z.get("account_label", "Akun Utama"),
+                })
 
         payload = {
             "zones": serialized_zones,
