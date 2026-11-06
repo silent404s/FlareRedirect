@@ -91,22 +91,22 @@ if %ERRORLEVEL% NEQ 0 (
 )
 
 echo.
-if exist "dist\FlareRedirect.exe" (
+if exist "dist\FlareRedirect_v*.exe" (
     echo ====================================================================
     echo [SUKSES] BUILD EXE BERHASIL DISELESAIKAN!
     echo ====================================================================
-    echo File Executable Mandiri:
-    echo %CD%\dist\FlareRedirect.exe
+    echo Folder Output: %CD%\dist\
     echo.
     echo CATATAN PENTING:
     echo - File EXE ini adalah aplikasi mandiri untuk Windows 10/11 64-bit.
     echo - Metadata versi Windows dan nomor versi file telah ditanamkan ke EXE.
+    echo - Seluruh binary dipastikan memiliki tag versi resmi (FlareRedirect_v*.exe).
     echo - Token API TIDAK ditanam di dalam executable ini (aman dari kebocoran).
     echo - Executable ini belum ditandatangani secara digital (Self/Unsigned).
     echo   Jika Windows SmartScreen muncul, klik "More info" -> "Run anyway".
     echo ====================================================================
 ) else (
-    echo [ERROR] File dist\FlareRedirect.exe tidak ditemukan setelah build.
+    echo [ERROR] File executable berlabel versi tidak ditemukan di folder dist\ setelah build.
     pause
     exit /b 1
 )

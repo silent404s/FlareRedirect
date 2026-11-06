@@ -63,7 +63,7 @@ VSVersionInfo(
         StringStruct('FileVersion', '{version_str}.0'),
         StringStruct('InternalName', 'FlareRedirect'),
         StringStruct('LegalCopyright', 'Copyright (c) 2026 FlareRedirect'),
-        StringStruct('OriginalFilename', 'FlareRedirect.exe'),
+        StringStruct('OriginalFilename', 'FlareRedirect_v{version_str}.exe'),
         StringStruct('ProductName', 'FlareRedirect'),
         StringStruct('ProductVersion', '{version_str}.0')])
       ]), 
@@ -95,7 +95,7 @@ def build():
         "PyInstaller",
         "--noconsole",
         "--onefile",
-        "--name=FlareRedirect",
+        f"--name=FlareRedirect_v{version_str}",
         f"--version-file={ver_file}",
         "--clean",
         "--noconfirm",
@@ -119,21 +119,27 @@ def build():
         print("\n[ERROR] PyInstaller build failed! Check errors above.")
         sys.exit(result.returncode)
 
-    dist_exe = ROOT_DIR / "dist" / "FlareRedirect.exe"
     versioned_exe = ROOT_DIR / "dist" / f"FlareRedirect_v{version_str}.exe"
 
-    if dist_exe.is_file():
-        shutil.copy2(dist_exe, versioned_exe)
+    # Strict policy: ensure no bare unversioned exe remains in dist/
+    bare_exe = ROOT_DIR / "dist" / "FlareRedirect.exe"
+    if bare_exe.is_file():
+        try:
+            bare_exe.unlink()
+        except Exception:
+            pass
+
+    if versioned_exe.is_file():
         print("\n====================================================================")
-        print("  BUILD EXECUTABLE SUKSES!")
+        print(f"  BUILD EXECUTABLE SUKSES! (FlareRedirect v{version_str})")
         print("====================================================================")
-        print(f"  1. Executable Utama     : {dist_exe}")
-        print(f"  2. Executable Versi     : {versioned_exe}")
-        print(f"  Windows File Version    : {version_str}.0")
-        print(f"  Product Version         : {version_str}.0")
+        print(f"  Executable Versi Resmi : {versioned_exe}")
+        print(f"  Windows File Version   : {version_str}.0")
+        print(f"  Product Version        : {version_str}.0")
+        print("  (Seluruh file .exe dijamin memiliki tag versi resmi)")
         print("====================================================================\n")
     else:
-        print(f"\n[ERROR] Output file not found: {dist_exe}")
+        print(f"\n[ERROR] Output file not found: {versioned_exe}")
         sys.exit(1)
 
 

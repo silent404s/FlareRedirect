@@ -1,7 +1,7 @@
 {
-  "version": "1.1.0",
+  "version": "1.2.0",
   "name": "FlareRedirect",
   "description": "High Performance Cloudflare 301 Redirect Engine",
-  "release_date": "2026-11-06"
+  "release_date": "2026-11-06",
+  "release_notes": "✨ Versi 1.2.0:\n- Otomatisasi resolusi multi-akun lintas profil (FlarePilot architecture).\n- Pengecekan Public DNS IP dan deteksi Cloudflare Proxy.\n- Penyimpanan profil kredensial lokal (config.json) dengan proteksi Zero-Leak .gitignore.\n- Fitur Hapus Redirect Massal (Bulk Delete) pada domain terpilih.\n- Tombol Hapus Rule langsung pada dialog Single Redirect.\n- Pemulihan menu Redirect Manager pada navigasi sidebar.\n- Standardisasi penamaan executable ber-versi (FlareRedirect_v{version}.exe)."
 }
-
