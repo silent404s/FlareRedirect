@@ -23,7 +23,7 @@ from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QColor, QFont
 from src.cloudflare.zones import ZoneItem, group_zones_by_target
 from src.security.session import active_session
-from src.ui.workers import FetchZonesWorker
+from src.ui.workers import FetchZonesWorker, BulkDeleteDomainRedirectsWorker
 from src.ui.bulk_dialog import BulkRedirectDialog
 from src.ui.single_dialog import SingleRedirectDialog
 from src.cloudflare.redirects import (
@@ -70,6 +70,12 @@ class DomainPage(QWidget):
         self.bulk_btn.setProperty("class", "btn-neon-cyan")
         self.bulk_btn.clicked.connect(self._open_bulk_dialog)
         header_row.addWidget(self.bulk_btn)
+
+        self.bulk_delete_btn = QPushButton("🗑️ Hapus Redirect Terpilih")
+        self.bulk_delete_btn.setProperty("class", "btn-danger")
+        self.bulk_delete_btn.setStyleSheet("padding: 5px 12px; font-size: 11px; font-weight: 600;")
+        self.bulk_delete_btn.clicked.connect(self._delete_selected_redirects)
+        header_row.addWidget(self.bulk_delete_btn)
 
         self.refresh_btn = QPushButton("🔄 Refresh")
         self.refresh_btn.setProperty("class", "btn-secondary")
@@ -304,10 +310,62 @@ class DomainPage(QWidget):
     def _on_single_redirect_saved(self, data: Dict[str, Any]):
         zone_id = data.get("zone_id")
         target_url = data.get("destination_url")
-        if zone_id and target_url:
-            self.zone_targets_cache[zone_id] = target_url
+        if zone_id:
+            if data.get("deleted") or target_url == "-":
+                self.zone_targets_cache.pop(zone_id, None)
+                self.show_toast.emit("Aturan 301 Redirect berhasil dihapus.", False)
+            elif target_url:
+                self.zone_targets_cache[zone_id] = target_url
+                self.show_toast.emit(f"301 Redirect berhasil dipasang ke {target_url}", False)
             self._filter_table()
-            self.show_toast.emit(f"301 Redirect berhasil dipasang ke {target_url}", False)
+
+    def _delete_selected_redirects(self):
+        selected_zones: List[ZoneItem] = []
+        for row in range(self.table.rowCount()):
+            chk = self.table.cellWidget(row, 0)
+            if isinstance(chk, QCheckBox) and chk.isChecked() and row < len(self.current_filtered_zones):
+                selected_zones.append(self.current_filtered_zones[row])
+
+        if not selected_zones:
+            QMessageBox.warning(
+                self,
+                "Belum Ada Domain Dipilih",
+                "Silakan centang satu atau beberapa domain pada tabel terlebih dahulu untuk menghapus aturan redirect.",
+            )
+            return
+
+        confirm = QMessageBox.question(
+            self,
+            "Konfirmasi Hapus Redirect Massal",
+            f"Apakah Anda yakin ingin menghapus seluruh aturan redirect untuk {len(selected_zones)} domain yang dicentang?\n\n"
+            "Tindakan ini akan membersihkan semua aturan redirect di Cloudflare untuk domain-domain tersebut.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+        if confirm != QMessageBox.StandardButton.Yes:
+            return
+
+        self.progress_bar.show()
+        self.bulk_delete_btn.setEnabled(False)
+        self.refresh_btn.setEnabled(False)
+
+        self.bulk_del_worker = BulkDeleteDomainRedirectsWorker(selected_zones, parent=self)
+        self.bulk_del_worker.progress.connect(lambda cur, tot, msg: self.show_toast.emit(f"[{cur}/{tot}] {msg}", False))
+        self.bulk_del_worker.finished.connect(self._on_bulk_delete_finished)
+        self.bulk_del_worker.error.connect(self._on_bulk_delete_error)
+        self.bulk_del_worker.start()
+
+    def _on_bulk_delete_finished(self, count: int):
+        self.progress_bar.hide()
+        self.bulk_delete_btn.setEnabled(True)
+        self.refresh_btn.setEnabled(True)
+        self.load_domains()
+        self.show_toast.emit(f"Selesai! Total {count} aturan redirect berhasil dihapus.", False)
+
+    def _on_bulk_delete_error(self, err_msg: str):
+        self.progress_bar.hide()
+        self.bulk_delete_btn.setEnabled(True)
+        self.refresh_btn.setEnabled(True)
+        QMessageBox.critical(self, "Gagal Menghapus Redirect Massal", err_msg)
 
     def _delete_domain_redirects(self, zone: ZoneItem):
         confirm = QMessageBox.question(

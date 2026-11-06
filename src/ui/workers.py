@@ -447,6 +447,36 @@ class BulkCreateRedirectsWorker(QThread):
             self.error.emit(sanitize_message(str(exc)))
 
 
+class BulkDeleteDomainRedirectsWorker(QThread):
+    """Deletes all redirect rules for a list of zones with progress reporting."""
+    progress = Signal(int, int, str)
+    finished = Signal(int)
+    error = Signal(str)
+
+    def __init__(self, zones: List[Any], parent=None):
+        super().__init__(parent)
+        self.zones = zones
+
+    def run(self):
+        try:
+            total = len(self.zones)
+            deleted_total = 0
+            for idx, z in enumerate(self.zones, start=1):
+                z_name = getattr(z, "name", str(z))
+                z_id = getattr(z, "id", "")
+                acc_id = getattr(z, "account_id", None)
+                self.progress.emit(idx, total, f"Menghapus redirect: {z_name}")
+                count = delete_matching_redirects_for_domain(
+                    zone_id=z_id,
+                    source_domain=z_name,
+                    account_id=acc_id,
+                )
+                deleted_total += count
+            self.finished.emit(deleted_total)
+        except Exception as exc:
+            self.error.emit(sanitize_message(str(exc)))
+
+
 class BulkDeleteRedirectsWorker(QThread):
     """Deletes multiple redirect rules safely with progress reporting."""
     progress = Signal(int, int, str)

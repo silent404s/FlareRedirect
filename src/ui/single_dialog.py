@@ -135,12 +135,18 @@ class SingleRedirectDialog(QDialog):
         btn_layout = QHBoxLayout()
         btn_layout.setSpacing(10)
 
+        self.delete_btn = QPushButton("🗑️ Hapus Rule Ini")
+        self.delete_btn.setProperty("class", "btn-danger")
+        self.delete_btn.setStyleSheet("padding: 7px 12px; font-weight: 600; font-size: 11px;")
+        self.delete_btn.clicked.connect(self._on_delete_rule)
+        btn_layout.addWidget(self.delete_btn)
+
+        btn_layout.addStretch()
+
         self.cancel_btn = QPushButton("Batal")
         self.cancel_btn.setProperty("class", "btn-secondary")
         self.cancel_btn.clicked.connect(self.reject)
         btn_layout.addWidget(self.cancel_btn)
-
-        btn_layout.addStretch()
 
         self.submit_btn = QPushButton("🚀 Terapkan Redirect 301")
         self.submit_btn.setProperty("class", "btn-primary")
@@ -149,6 +155,39 @@ class SingleRedirectDialog(QDialog):
         btn_layout.addWidget(self.submit_btn)
 
         layout.addLayout(btn_layout)
+
+    def _on_delete_rule(self):
+        reply = QMessageBox.question(
+            self,
+            "Konfirmasi Hapus Rule",
+            f"Hapus semua aturan 301 redirect untuk '{self.zone.name}' dari Cloudflare?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+        if reply == QMessageBox.StandardButton.Yes:
+            self.delete_btn.setEnabled(False)
+            self.submit_btn.setEnabled(False)
+            self.progress_bar.show()
+            try:
+                from src.cloudflare.redirects import delete_matching_redirects_for_domain
+                count = delete_matching_redirects_for_domain(
+                    zone_id=self.zone.id,
+                    source_domain=self.zone.name,
+                    account_id=self.zone.account_id,
+                )
+                self.redirect_saved.emit({
+                    "zone_id": self.zone.id,
+                    "destination_url": "-",
+                    "deleted": True,
+                })
+                QMessageBox.information(
+                    self, "Sukses", f"Berhasil menghapus {count} aturan redirect untuk {self.zone.name}."
+                )
+                self.accept()
+            except Exception as exc:
+                self.progress_bar.hide()
+                self.delete_btn.setEnabled(True)
+                self.submit_btn.setEnabled(True)
+                QMessageBox.critical(self, "Gagal Menghapus", str(exc))
 
     def _run_initial_preflight(self):
         target = self.target_input.text().strip()

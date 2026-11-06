@@ -121,9 +121,10 @@ class MainWindow(QMainWindow):
         sidebar_layout.addWidget(brand_box)
         sidebar_layout.addSpacing(4)
 
-        # Navigation Buttons (Only 2 Main Menus per Spec)
+        # Navigation Buttons
         self._add_nav_btn(sidebar_layout, "dashboard", "⊞  Dashboard")
         self._add_nav_btn(sidebar_layout, "domains", "🌐  Domains")
+        self._add_nav_btn(sidebar_layout, "redirects", "🔀  Redirects")
 
         sidebar_layout.addStretch()
 
