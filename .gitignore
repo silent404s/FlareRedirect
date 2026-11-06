@@ -26,7 +26,8 @@ app.log
 
 # PyInstaller / Build outputs
 build/
-dist/
+!dist/
+!dist/*.exe
 *.egg-info/
 *.zip
 *.spec
