@@ -30,6 +30,7 @@ from src.cloudflare.redirects import (
     get_zone_redirect_ruleset,
     delete_matching_redirects_for_domain,
 )
+from src import config_manager
 
 
 class DomainPage(QWidget):
@@ -77,9 +78,10 @@ class DomainPage(QWidget):
         self.bulk_delete_btn.clicked.connect(self._delete_selected_redirects)
         header_row.addWidget(self.bulk_delete_btn)
 
-        self.refresh_btn = QPushButton("🔄 Refresh")
+        self.refresh_btn = QPushButton("🔄 Refresh dari CF")
         self.refresh_btn.setProperty("class", "btn-secondary")
-        self.refresh_btn.clicked.connect(self.load_domains)
+        self.refresh_btn.setToolTip("Muat ulang daftar domain langsung dari server Cloudflare dan perbarui penyimpanan lokal.")
+        self.refresh_btn.clicked.connect(lambda: self.load_domains(force_refresh=True))
         header_row.addWidget(self.refresh_btn)
         layout.addLayout(header_row)
 
@@ -181,12 +183,38 @@ class DomainPage(QWidget):
         self.account_combo.blockSignals(False)
 
     def _on_account_filter_changed(self):
-        self.load_domains()
+        if self.all_zones:
+            self._filter_table()
+        else:
+            self.load_domains(force_refresh=False)
 
-    def load_domains(self):
+    def load_domains(self, force_refresh: bool = False):
         self.refresh_account_combo()
         target_acc_id = self.account_combo.currentData() or "all"
 
+        # 1. Coba muat dari cache lokal jika tidak dipaksa refresh dari server CF
+        if not force_refresh:
+            cached_data = config_manager.load_cached_domains()
+            cached_zones = cached_data.get("zones", [])
+            cached_targets = cached_data.get("targets", {})
+
+            if cached_zones:
+                self.all_zones = [ZoneItem(item) for item in cached_zones]
+                self.zone_targets_cache.update(cached_targets)
+
+                # Sinkronkan zones ke akun masing-masing di session in-memory
+                for acc in active_session.get_all_accounts():
+                    acc.zones = [
+                        z for z in self.all_zones
+                        if (z.account_id and z.account_id == acc.account_id) or (z.account_label and z.account_label == acc.label)
+                    ]
+
+                self._filter_table()
+                self.zones_updated.emit(self.all_zones)
+                self.show_toast.emit(f"Memuat {len(self.all_zones)} domain dari penyimpanan lokal.", False)
+                return
+
+        # 2. Jika force_refresh atau cache lokal belum ada, ambil langsung dari Cloudflare API
         self.progress_bar.show()
         self.refresh_btn.setEnabled(False)
 
@@ -203,9 +231,11 @@ class DomainPage(QWidget):
         self.progress_bar.hide()
         self.refresh_btn.setEnabled(True)
         self.all_zones = zones
+        # Simpan ke cache lokal untuk start berikutnya
+        config_manager.save_cached_domains(zones, self.zone_targets_cache)
         self._filter_table()
         self.zones_updated.emit(zones)
-        self.show_toast.emit(f"Berhasil memuat {len(zones)} domain dari Cloudflare.", False)
+        self.show_toast.emit(f"Berhasil memuat {len(zones)} domain dari Cloudflare dan disimpan ke penyimpanan lokal.", False)
 
     def _on_zones_error(self, err_msg: str):
         self.progress_bar.hide()
@@ -313,9 +343,11 @@ class DomainPage(QWidget):
         if zone_id:
             if data.get("deleted") or target_url == "-":
                 self.zone_targets_cache.pop(zone_id, None)
+                config_manager.update_cached_target(zone_id, None)
                 self.show_toast.emit("Aturan 301 Redirect berhasil dihapus.", False)
             elif target_url:
                 self.zone_targets_cache[zone_id] = target_url
+                config_manager.update_cached_target(zone_id, target_url)
                 self.show_toast.emit(f"301 Redirect berhasil dipasang ke {target_url}", False)
             self._filter_table()
 
@@ -344,6 +376,7 @@ class DomainPage(QWidget):
         if confirm != QMessageBox.StandardButton.Yes:
             return
 
+        self._pending_bulk_deleted_zones = selected_zones
         self.progress_bar.show()
         self.bulk_delete_btn.setEnabled(False)
         self.refresh_btn.setEnabled(False)
@@ -358,7 +391,12 @@ class DomainPage(QWidget):
         self.progress_bar.hide()
         self.bulk_delete_btn.setEnabled(True)
         self.refresh_btn.setEnabled(True)
-        self.load_domains()
+        if hasattr(self, "_pending_bulk_deleted_zones"):
+            for z in self._pending_bulk_deleted_zones:
+                self.zone_targets_cache.pop(z.id, None)
+                config_manager.update_cached_target(z.id, None)
+            self._pending_bulk_deleted_zones = []
+        self._filter_table()
         self.show_toast.emit(f"Selesai! Total {count} aturan redirect berhasil dihapus.", False)
 
     def _on_bulk_delete_error(self, err_msg: str):
@@ -378,6 +416,7 @@ class DomainPage(QWidget):
             try:
                 count = delete_matching_redirects_for_domain(zone.id, zone.name, account_id=zone.account_id)
                 self.zone_targets_cache.pop(zone.id, None)
+                config_manager.update_cached_target(zone.id, None)
                 self._filter_table()
                 self.show_toast.emit(f"{count} aturan redirect berhasil dihapus untuk {zone.name}.", False)
             except Exception as exc:
@@ -391,9 +430,13 @@ class DomainPage(QWidget):
                 selected_ids.append(self.current_filtered_zones[row].id)
 
         dlg = BulkRedirectDialog(self.all_zones, preselected_zone_ids=selected_ids, parent=self)
-        dlg.bulk_completed.connect(
-            lambda count: self.show_toast.emit(f"{count} aturan bulk redirect berhasil dibuat!", False)
-        )
+        def _on_bulk_done(count: int):
+            if dlg.last_applied:
+                self.zone_targets_cache.update(dlg.last_applied)
+                config_manager.save_cached_domains(self.all_zones, self.zone_targets_cache)
+                self._filter_table()
+            self.show_toast.emit(f"{count} aturan bulk redirect berhasil dibuat!", False)
+        dlg.bulk_completed.connect(_on_bulk_done)
         dlg.exec()
 
     def set_zones(self, zones: List[ZoneItem]):

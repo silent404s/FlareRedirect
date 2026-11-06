@@ -128,3 +128,106 @@ def clear_all_profiles() -> bool:
     cfg["current_profile"] = ""
     return save_config(cfg)
 
+
+def get_data_dir() -> Path:
+    """Resolves and ensures local data directory exists."""
+    cfg_path = get_config_path()
+    data_dir = cfg_path.parent / "data"
+    data_dir.mkdir(parents=True, exist_ok=True)
+    return data_dir
+
+
+def get_domains_cache_path() -> Path:
+    """Resolves the path to data/domains_cache.json."""
+    return get_data_dir() / "domains_cache.json"
+
+
+def load_cached_domains() -> Dict[str, Any]:
+    """Loads cached Cloudflare zones and redirect targets from local data/domains_cache.json.
+    Returns:
+        dict: {"zones": [...], "targets": {...}, "last_updated": "..."} or empty dict on error.
+    """
+    cache_path = get_domains_cache_path()
+    if not cache_path.is_file():
+        return {"zones": [], "targets": {}, "last_updated": ""}
+
+    try:
+        with open(cache_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+            if not isinstance(data, dict):
+                return {"zones": [], "targets": {}, "last_updated": ""}
+            if "zones" not in data or not isinstance(data["zones"], list):
+                data["zones"] = []
+            if "targets" not in data or not isinstance(data["targets"], dict):
+                data["targets"] = {}
+            return data
+    except Exception:
+        return {"zones": [], "targets": {}, "last_updated": ""}
+
+
+def save_cached_domains(
+    zones: List[Any],
+    targets: Optional[Dict[str, str]] = None,
+) -> bool:
+    """Saves zones and redirect target mappings to local data/domains_cache.json.
+    Accepts List of ZoneItem instances or dictionaries.
+    """
+    cache_path = get_domains_cache_path()
+    try:
+        from datetime import datetime
+
+        # If targets is provided, use it directly. If None, preserve existing targets from cache.
+        target_map: Dict[str, str] = {}
+        if targets is not None:
+            target_map = targets
+        elif cache_path.is_file():
+            try:
+                with open(cache_path, "r", encoding="utf-8") as f:
+                    old_data = json.load(f)
+                    if isinstance(old_data, dict) and isinstance(old_data.get("targets"), dict):
+                        target_map = old_data["targets"]
+            except Exception:
+                pass
+
+        serialized_zones = []
+        for z in zones:
+            if hasattr(z, "to_dict"):
+                serialized_zones.append(z.to_dict())
+            elif isinstance(z, dict):
+                serialized_zones.append(z)
+
+        payload = {
+            "zones": serialized_zones,
+            "targets": target_map,
+            "last_updated": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        }
+
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(cache_path, "w", encoding="utf-8") as f:
+            json.dump(payload, f, indent=4, ensure_ascii=False)
+        return True
+    except Exception:
+        return False
+
+
+def update_cached_target(zone_id: str, target_url: Optional[str]) -> bool:
+    """Updates or removes target redirect for a specific zone in the cache."""
+    cache = load_cached_domains()
+    targets = cache.get("targets", {})
+    if not target_url or target_url.strip() in ("", "-"):
+        targets.pop(zone_id, None)
+    else:
+        targets[zone_id] = target_url.strip()
+    return save_cached_domains(cache.get("zones", []), targets)
+
+
+def clear_cached_domains() -> bool:
+    """Deletes local data/domains_cache.json if exists."""
+    cache_path = get_domains_cache_path()
+    try:
+        if cache_path.is_file():
+            cache_path.unlink()
+        return True
+    except Exception:
+        return False
+

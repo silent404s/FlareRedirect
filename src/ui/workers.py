@@ -407,6 +407,7 @@ class BulkCreateRedirectsWorker(QThread):
             success_count = 0
             failed_count = 0
             errors = []
+            applied: Dict[str, str] = {}
 
             for idx, item in enumerate(self.items, start=1):
                 zone_id = item["zone_id"]
@@ -433,6 +434,7 @@ class BulkCreateRedirectsWorker(QThread):
                         clean_conflicts=True,
                     )
                     success_count += 1
+                    applied[zone_id] = dest
                 except Exception as exc:
                     failed_count += 1
                     err_text = f"{source}: {sanitize_message(str(exc))}"
@@ -442,6 +444,7 @@ class BulkCreateRedirectsWorker(QThread):
                 "success": success_count,
                 "failed": failed_count,
                 "errors": errors,
+                "applied": applied,
             })
         except Exception as exc:
             self.error.emit(sanitize_message(str(exc)))

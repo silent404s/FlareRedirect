@@ -336,6 +336,18 @@ class ConnectPage(QWidget):
             }
             config_manager.save_profile(final_label, profile_payload, set_as_current=True)
 
+        # Update domain cache with newly discovered zones from this account
+        new_zones = result.get("zones", [])
+        if new_zones:
+            cached_data = config_manager.load_cached_domains()
+            existing_zones = cached_data.get("zones", [])
+            existing_ids = {z.get("id") if isinstance(z, dict) else getattr(z, "id", "") for z in existing_zones}
+            for nz in new_zones:
+                nz_id = nz.get("id") if isinstance(nz, dict) else getattr(nz, "id", "")
+                if nz_id not in existing_ids:
+                    existing_zones.append(nz)
+            config_manager.save_cached_domains(existing_zones, cached_data.get("targets", {}))
+
         self.clear_input_token()
         self.show_toast.emit(result.get("message", "Akun berhasil terhubung!"), False)
         self.refresh_account_table()

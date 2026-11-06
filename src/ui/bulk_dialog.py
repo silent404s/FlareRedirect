@@ -56,6 +56,7 @@ class BulkRedirectDialog(QDialog):
         self.preselected_zone_ids = set(preselected_zone_ids or [])
         self.worker: Optional[BulkCreateRedirectsWorker] = None
         self.preflight_worker: Optional[PreflightValidationWorker] = None
+        self.last_applied: Dict[str, str] = {}
 
         self.validated_items: List[Dict[str, Any]] = []
 
@@ -522,6 +523,7 @@ class BulkRedirectDialog(QDialog):
         success = summary.get("success", 0)
         failed = summary.get("failed", 0)
         errors = summary.get("errors", [])
+        self.last_applied = summary.get("applied", {})
 
         msg = f"Eksekusi Selesai!\n\n✓ Berhasil: {success} domain\n"
         if failed > 0:

@@ -1,9 +1,9 @@
-# ⚡ FlareRedirect (v1.2.0)
+# ⚡ FlareRedirect (v1.3.0)
 > **High Performance Cloudflare 301 Permanent Redirect Engine**  
 > Kelola ratusan aturan *Single Redirects (301 Permanent URL Forwarding)* di Cloudflare secara instan, aman, dan tanpa perantara pihak ketiga.
 
 [![Platform](https://img.shields.io/badge/Platform-Windows%2010%20%7C%2011%20(64--bit)-blue.svg)](#)
-[![Version](https://img.shields.io/badge/Version-v1.2.0-orange.svg)](#)
+[![Version](https://img.shields.io/badge/Version-v1.3.0-orange.svg)](#)
 [![Python](https://img.shields.io/badge/Python-3.12%20%7C%203.14-green.svg)](#)
 [![GUI](https://img.shields.io/badge/GUI-PySide6%20Qt-blueviolet.svg)](#)
 [![License](https://img.shields.io/badge/License-MIT-brightgreen.svg)](#)
@@ -16,11 +16,11 @@
 1. **Unduh / Buka Executable Berlabel Versi:**
    - Gunakan file versi terbaru di folder `dist/`:
      ```text
-     dist\FlareRedirect_v1.2.0.exe
+     dist\FlareRedirect_v1.3.0.exe
      ```
    - *(Setiap versi rilis selalu memiliki penamaan tag versi yang jelas)*.
 2. **Jalankan Aplikasi:**
-   - Klik dua kali pada `FlareRedirect_v1.2.0.exe`.
+   - Klik dua kali pada `FlareRedirect_v1.3.0.exe`.
    - *(Jika muncul Windows SmartScreen, klik **More info** &rarr; **Run anyway**)*.
 3. **Hubungkan Akun Cloudflare:**
    - Masuk ke menu **🔑 Kelola Akun** di pojok kanan atas.
@@ -28,6 +28,7 @@
    - Pastikan opsi **"💾 Simpan ke config.json"** dicentang agar akun otomatis terhubung setiap kali aplikasi dibuka.
 4. **Mulai Redirect Domain:**
    - Masuk ke menu **🌐 Domains** untuk melihat seluruh domain Anda.
+   - **Local Cache Instant Startup:** Domain otomatis disimpan di penyimpanan lokal sehingga saat aplikasi dibuka kembali, domain langsung muncul tanpa menunggu koneksi Cloudflare! Gunakan tombol **"🔄 Refresh dari CF"** jika ingin menyinkronkan data terbaru.
    - Gunakan tombol **⚡ Bulk Redirect** untuk mengalihkan puluhan/ratusan domain sekaligus secara otomatis lintas akun!
 
 ---
@@ -78,11 +79,11 @@ python build_exe.py
 ```
 
 Skrip ini secara otomatis:
-1. Membaca nomor versi dari `version.json` (saat ini `v1.2.0`).
-2. Menanamkan metadata resource Windows (*File Version: 1.2.0.0, Product Version: 1.2.0.0, Icon*).
+1. Membaca nomor versi dari `version.json` (saat ini `v1.3.0`).
+2. Menanamkan metadata resource Windows (*File Version: 1.3.0.0, Product Version: 1.3.0.0, Icon*).
 3. Mengemas aplikasi menjadi standalone executable tanpa konsol CMD.
 4. Menghasilkan file output berlabel versi resmi di folder `dist/`:
-   - `dist\FlareRedirect_v1.2.0.exe` (Selalu berlabel tag versi)
+   - `dist\FlareRedirect_v1.3.0.exe` (Selalu berlabel tag versi)
 
 ---
 
@@ -98,8 +99,8 @@ Di portal [Cloudflare API Tokens](https://dash.cloudflare.com/profile/api-tokens
 
 ## 🛡️ PRIVASI & KEAMANAN GITHUB (Zero-Leak)
 
-- **Aman Dari Push:** Seluruh token dan profil akun disimpan di file lokal `config.json` yang secara mutlak **dikecualikan oleh `.gitignore`**.
-- File kredensial pribadi Anda **tidak akan pernah ter-push ke GitHub**.
+- **Aman Dari Push:** Seluruh token dan profil akun disimpan di file lokal `config.json` dan `data/` yang secara mutlak **dikecualikan oleh `.gitignore`**.
+- File kredensial pribadi dan cache domain lokal Anda **tidak akan pernah ter-push ke GitHub**.
 - Untuk melakukan push pembaruan kode ke repository GitHub:
   ```cmd
   git_push.bat
@@ -109,11 +110,11 @@ Di portal [Cloudflare API Tokens](https://dash.cloudflare.com/profile/api-tokens
 
 ## 🧪 PENGUJIAN UNIT (UNIT TESTS)
 
-Untuk memverifikasi keutuhan seluruh engine validasi, proxy check, dan API client:
+Untuk memverifikasi keutuhan seluruh engine validasi, proxy check, local cache, dan API client:
 ```powershell
 pytest -v
 ```
-*(Saat ini 57/57 unit tests terverifikasi 100% lulus)*.
+*(Saat ini 58/58 unit tests terverifikasi 100% lulus)*.
 
 ---
 

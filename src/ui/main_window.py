@@ -342,7 +342,7 @@ class MainWindow(QMainWindow):
     def _on_account_switched(self, account_id: str):
         self._refresh_account_switcher()
         self.connect_page.refresh_account_table()
-        self.domain_page.load_domains()
+        self.domain_page.load_domains(force_refresh=False)
         acc = active_session.active_account
         label = acc.label if acc else account_id
         if label:
@@ -356,7 +356,7 @@ class MainWindow(QMainWindow):
             acc_count = active_session.account_count
             self.header_status_badge.set_status("connected", f"Connected ({acc_count} Akun)")
             self.header_disconnect_btn.show()
-            self.domain_page.load_domains()
+            self.domain_page.load_domains(force_refresh=False)
         else:
             self.header_status_badge.set_status("disconnected", "Disconnected")
             self.header_disconnect_btn.hide()
@@ -378,7 +378,7 @@ class MainWindow(QMainWindow):
 
     def _refresh_all(self):
         if active_session.is_connected:
-            self.domain_page.load_domains()
+            self.domain_page.load_domains(force_refresh=True)
             self.redirect_page.load_redirects_for_selected_zone()
             self.show_toast_message("Memperbarui seluruh data dari Cloudflare...", False)
         else:

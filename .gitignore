@@ -19,6 +19,8 @@ accounts.json
 *.json.local
 data/
 src/data/
+domains_cache.json
+*.cache.json
 *.log
 app.log
 *.key

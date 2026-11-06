@@ -9,7 +9,7 @@ from src.config import Settings
 def test_settings_defaults():
     s = Settings()
     assert s.APP_NAME == "FlareRedirect"
-    assert s.APP_VERSION == "1.2.0"
+    assert s.APP_VERSION == "1.3.0"
     assert s.APP_ENV in ("production", "development", "testing")
     assert s.CLOUDFLARE_API_BASE_URL == "https://api.cloudflare.com/client/v4"
     assert s.TIMEOUT_CONNECT == 10.0
@@ -78,5 +78,54 @@ def test_config_manager_crud(tmp_path, monkeypatch):
     profiles = cm.get_profiles()
     assert "Akun Test" not in profiles
     assert "Akun Kedua" in profiles
+
+
+def test_domains_cache_crud(tmp_path, monkeypatch):
+    import src.config_manager as cm
+    from src.cloudflare.zones import ZoneItem
+
+    fake_cache = tmp_path / "data" / "domains_cache.json"
+    monkeypatch.setattr(cm, "get_domains_cache_path", lambda: fake_cache)
+    monkeypatch.setattr(cm, "get_data_dir", lambda: tmp_path / "data")
+
+    # 1. Load when empty
+    initial = cm.load_cached_domains()
+    assert initial["zones"] == []
+    assert initial["targets"] == {}
+
+    # 2. Save zones and targets
+    z1 = ZoneItem({"id": "z1", "name": "domain1.com", "status": "active"}, account_id="acc1", account_label="Akun 1")
+    z2 = {"id": "z2", "name": "domain2.com", "status": "pending", "account_id": "acc2", "account_label": "Akun 2"}
+    targets = {"z1": "https://target1.com"}
+
+    saved = cm.save_cached_domains([z1, z2], targets=targets)
+    assert saved is True
+    assert fake_cache.is_file()
+
+    # 3. Load saved data
+    loaded = cm.load_cached_domains()
+    assert len(loaded["zones"]) == 2
+    assert loaded["zones"][0]["name"] == "domain1.com"
+    assert loaded["zones"][0]["account_label"] == "Akun 1"
+    assert loaded["zones"][1]["name"] == "domain2.com"
+    assert loaded["targets"]["z1"] == "https://target1.com"
+
+    # 4. Update cached target
+    cm.update_cached_target("z2", "https://target2.com")
+    updated = cm.load_cached_domains()
+    assert updated["targets"]["z2"] == "https://target2.com"
+
+    # 5. Delete target
+    cm.update_cached_target("z1", "-")
+    after_del = cm.load_cached_domains()
+    assert "z1" not in after_del["targets"]
+    assert after_del["targets"]["z2"] == "https://target2.com"
+
+    # 6. Clear cache
+    cm.clear_cached_domains()
+    assert not fake_cache.is_file()
+    cleared = cm.load_cached_domains()
+    assert cleared["zones"] == []
+
 
 

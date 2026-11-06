@@ -17,11 +17,14 @@ class ZoneItem:
         self.status: str = data.get("status", "unknown")
         self.paused: bool = data.get("paused", False)
         plan_data = data.get("plan", {})
-        self.plan_name: str = plan_data.get("name", "Free") if isinstance(plan_data, dict) else "Free"
+        if "plan_name" in data and isinstance(data["plan_name"], str):
+            self.plan_name: str = data["plan_name"]
+        else:
+            self.plan_name: str = plan_data.get("name", "Free") if isinstance(plan_data, dict) else "Free"
         name_servers = data.get("name_servers", [])
         self.name_servers: List[str] = name_servers if isinstance(name_servers, list) else []
-        self.account_id: str = account_id
-        self.account_label: str = account_label or "Akun Utama"
+        self.account_id: str = account_id or data.get("account_id", "")
+        self.account_label: str = account_label or data.get("account_label", "Akun Utama")
 
     def to_dict(self) -> Dict[str, Any]:
         return {
