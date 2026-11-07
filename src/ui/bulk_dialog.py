@@ -117,7 +117,7 @@ class BulkRedirectDialog(QDialog):
         t_row.addWidget(t_lbl)
 
         self.target_url_input = QLineEdit()
-        self.target_url_input.setPlaceholderText("https://linkrtpgacor77.com/habanero.html")
+        self.target_url_input.setPlaceholderText("https://targetdomain.com/landing.html")
         self.target_url_input.setStyleSheet("""
             QLineEdit {
                 background-color: #050811;
@@ -135,7 +135,7 @@ class BulkRedirectDialog(QDialog):
         t_layout.addLayout(t_row)
 
         opts_row = QHBoxLayout()
-        self.preserve_path_chk = QCheckBox("Preserve Sub-Path (Jangan dicentang jika target halaman spesifik /habanero.html)")
+        self.preserve_path_chk = QCheckBox("Preserve Sub-Path (Jangan dicentang jika target halaman spesifik /landing.html)")
         self.preserve_path_chk.setChecked(False)
         self.preserve_path_chk.setStyleSheet("color: #94A3B8; font-size: 11px;")
         opts_row.addWidget(self.preserve_path_chk)
@@ -169,10 +169,10 @@ class BulkRedirectDialog(QDialog):
         self.domain_text_area = QTextEdit()
         self.domain_text_area.setPlaceholderText(
             "Paste daftar domain di sini (bisa campuran dari akun Cloudflare mana saja)...\n"
-            "gacor77terbaik.org\n"
-            "angkapasaranresmi.com\n"
-            "www.gacor77.biz\n"
-            "https://gacorseo.com/"
+            "domain-lama1.com\n"
+            "situs-toko.org\n"
+            "www.website-lama.net\n"
+            "https://portal-contoh.com/"
         )
         self.domain_text_area.setMinimumHeight(75)
         self.domain_text_area.setMaximumHeight(120)

@@ -382,7 +382,7 @@ def create_redirect_rule(
         )
         return response
     except Exception as exc:
-        # Soft-Fail Verification (e.g. Nagawin account case where CF API issues notice/warning):
+        # Soft-Fail Verification (e.g. cases where Cloudflare API returns non-blocking notice/warning):
         try:
             _, verified_rules = get_zone_redirect_ruleset(zone_id, account_id=account_id)
             for vr in verified_rules:

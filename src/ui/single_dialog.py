@@ -87,7 +87,7 @@ class SingleRedirectDialog(QDialog):
         form_layout.addWidget(t_lbl)
 
         self.target_input = QLineEdit()
-        self.target_input.setPlaceholderText("https://linkrtpgacor77.com/habanero.html")
+        self.target_input.setPlaceholderText("https://targetdomain.com/landing.html")
         self.target_input.setText(self.current_target)
         self.target_input.setStyleSheet("""
             QLineEdit {
@@ -106,7 +106,7 @@ class SingleRedirectDialog(QDialog):
         form_layout.addWidget(self.target_input)
 
         # Options
-        self.preserve_path_chk = QCheckBox("Preserve Sub-Path (Jangan centang jika target file spesifik /habanero.html)")
+        self.preserve_path_chk = QCheckBox("Preserve Sub-Path (Jangan centang jika target file spesifik /landing.html)")
         self.preserve_path_chk.setChecked(False)
         self.preserve_path_chk.setStyleSheet("color: #94A3B8; font-size: 11px;")
         form_layout.addWidget(self.preserve_path_chk)

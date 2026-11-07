@@ -176,7 +176,7 @@ class RedirectFormDialog(QDialog):
 
         self.preserve_path_chk = QCheckBox("Preserve Path (Pertahankan sub-path URL ke target)")
         self.preserve_path_chk.setToolTip(
-            "Nonaktifkan jika target adalah halaman/file tertentu seperti /habanero.html\n"
+            "Nonaktifkan jika target adalah halaman/file tertentu seperti /landing.html\n"
             "agar trafik langsung dialihkan ke URL tujuan tanpa menambah slash."
         )
         self.preserve_path_chk.setChecked(False)

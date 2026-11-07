@@ -18,7 +18,9 @@ def qapp():
     return app
 
 
-def test_main_window_instantiation(qapp):
+def test_main_window_instantiation(qapp, monkeypatch):
+    monkeypatch.setattr("src.config_manager.load_config", lambda: {})
+    monkeypatch.setattr("src.config_manager.load_cached_domains", lambda: {"zones": [], "targets": {}})
     window = MainWindow()
     assert "FlareRedirect" in window.windowTitle()
     assert window.stack.count() == 6

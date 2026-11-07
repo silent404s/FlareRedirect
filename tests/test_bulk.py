@@ -224,26 +224,26 @@ def test_find_zone_across_accounts(monkeypatch):
 
     active_session.disconnect_all()
     acc1_id = active_session.add_account(label="Akun Utama", token="tok1")
-    acc2_id = active_session.add_account(label="cf rules nagawin", token="tok2")
+    acc2_id = active_session.add_account(label="Akun Cadangan", token="tok2")
 
-    z1 = ZoneItem({"id": "z_gacor", "name": "gacor77terbaik.org"}, account_id=acc1_id, account_label="Akun Utama")
-    z2 = ZoneItem({"id": "z_naga", "name": "nagawin88.com"}, account_id=acc2_id, account_label="cf rules nagawin")
+    z1 = ZoneItem({"id": "z_alpha", "name": "domain-lama.org"}, account_id=acc1_id, account_label="Akun Utama")
+    z2 = ZoneItem({"id": "z_beta", "name": "toko-online.com"}, account_id=acc2_id, account_label="Akun Cadangan")
 
     active_session._accounts[acc1_id].zones = [z1]
     active_session._accounts[acc2_id].zones = [z2]
 
     # Test domain from Account 1
-    acc_id, label, found_z, err = find_zone_across_accounts("www.gacor77terbaik.org")
+    acc_id, label, found_z, err = find_zone_across_accounts("www.domain-lama.org")
     assert acc_id == acc1_id
     assert label == "Akun Utama"
-    assert found_z.id == "z_gacor"
+    assert found_z.id == "z_alpha"
     assert err is None
 
     # Test domain from Account 2 (Auto detected without switching active account!)
-    acc_id2, label2, found_z2, err2 = find_zone_across_accounts("https://nagawin88.com/promo")
+    acc_id2, label2, found_z2, err2 = find_zone_across_accounts("https://toko-online.com/promo")
     assert acc_id2 == acc2_id
-    assert label2 == "cf rules nagawin"
-    assert found_z2.id == "z_naga"
+    assert label2 == "Akun Cadangan"
+    assert found_z2.id == "z_beta"
     assert err2 is None
 
     # Test unknown domain

@@ -110,7 +110,7 @@ class ConnectPage(QWidget):
         lbl_label = QLabel("Label / Nama Akun:")
         lbl_label.setStyleSheet("font-weight: 600; color: #E2E8F0; font-size: 12px;")
         self.label_input = QLineEdit()
-        self.label_input.setPlaceholderText("Contoh: Akun Utama / Nagawin")
+        self.label_input.setPlaceholderText("Contoh: Akun Utama / Akun Cadangan")
         lbl_vbox.addWidget(lbl_label)
         lbl_vbox.addWidget(self.label_input)
         inputs_row.addLayout(lbl_vbox, stretch=2)

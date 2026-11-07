@@ -37,11 +37,11 @@ def test_build_all_incoming_both_coverage():
 
 
 def test_build_all_incoming_specific_file_target_no_trailing_slash():
-    # When target URL points to a specific file like habanero.html,
+    # When target URL points to a specific file like landing.html,
     # it must use static "value" (no concat / trailing slash) even if preserve_path=True
     payload = build_all_incoming_payload(
-        source_domain="gacor77oficial.com",
-        destination_url="https://linkrtpgacor77.com/habanero.html",
+        source_domain="oldsite.com",
+        destination_url="https://newtarget.com/landing.html",
         coverage="both",
         status_code=301,
         preserve_path=True,
@@ -50,35 +50,35 @@ def test_build_all_incoming_specific_file_target_no_trailing_slash():
     from_val = payload["action_parameters"]["from_value"]
     assert from_val["status_code"] == 301
     assert "value" in from_val["target_url"]
-    assert from_val["target_url"]["value"] == "https://linkrtpgacor77.com/habanero.html"
+    assert from_val["target_url"]["value"] == "https://newtarget.com/landing.html"
     assert "expression" not in from_val["target_url"]
 
 
 def test_simulate_redirect_specific_file_target_no_trailing_slash():
-    # User's case: gacor77oficial.com -> https://linkrtpgacor77.com/habanero.html
-    # Visiting https://gacor77oficial.com must redirect to https://linkrtpgacor77.com/habanero.html (NOT .html/)
+    # Edge case: oldsite.com -> https://newtarget.com/landing.html
+    # Visiting https://oldsite.com must redirect to https://newtarget.com/landing.html (NOT .html/)
     matched, out_url, _ = simulate_redirect(
-        incoming_url="https://gacor77oficial.com",
-        source_domain="gacor77oficial.com",
-        destination_url="https://linkrtpgacor77.com/habanero.html",
+        incoming_url="https://oldsite.com",
+        source_domain="oldsite.com",
+        destination_url="https://newtarget.com/landing.html",
         coverage="both",
         preserve_path=True,
         preserve_query=True,
     )
     assert matched is True
-    assert out_url == "https://linkrtpgacor77.com/habanero.html"
+    assert out_url == "https://newtarget.com/landing.html"
 
     # Even with incoming path /subpath, file target must redirect directly to the file
     matched2, out_url2, _ = simulate_redirect(
-        incoming_url="https://gacor77oficial.com/anything/else",
-        source_domain="gacor77oficial.com",
-        destination_url="https://linkrtpgacor77.com/habanero.html",
+        incoming_url="https://oldsite.com/anything/else",
+        source_domain="oldsite.com",
+        destination_url="https://newtarget.com/landing.html",
         coverage="both",
         preserve_path=True,
         preserve_query=False,
     )
     assert matched2 is True
-    assert out_url2 == "https://linkrtpgacor77.com/habanero.html"
+    assert out_url2 == "https://newtarget.com/landing.html"
 
 
 def test_build_all_incoming_apex_only():
