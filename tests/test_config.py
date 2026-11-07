@@ -1,7 +1,6 @@
 """Unit tests for centralized configuration management.
 """
 
-import os
 from pathlib import Path
 from src.config import Settings
 

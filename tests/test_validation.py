@@ -9,7 +9,6 @@ from src.security.validation import (
     build_cloudflare_expression,
     validate_status_code,
     escape_cloudflare_string,
-    check_live_http_redirect,
     check_domain_public_ip,
     is_cloudflare_ip,
 )

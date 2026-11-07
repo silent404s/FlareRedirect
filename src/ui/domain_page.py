@@ -21,15 +21,12 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QColor, QFont
-from src.cloudflare.zones import ZoneItem, group_zones_by_target
+from src.cloudflare.zones import ZoneItem
 from src.security.session import active_session
 from src.ui.workers import FetchZonesWorker, BulkDeleteDomainRedirectsWorker
 from src.ui.bulk_dialog import BulkRedirectDialog
 from src.ui.single_dialog import SingleRedirectDialog
-from src.cloudflare.redirects import (
-    get_zone_redirect_ruleset,
-    delete_matching_redirects_for_domain,
-)
+from src.cloudflare.redirects import delete_matching_redirects_for_domain
 from src import config_manager
 
 
@@ -253,7 +250,6 @@ class DomainPage(QWidget):
         query = self.search_input.text().strip().lower()
         selected_status = self.status_combo.currentText().lower()
         selected_acc_id = self.account_combo.currentData()
-        view_mode = self.view_mode_combo.currentData()
 
         filtered = []
         for z in self.all_zones:

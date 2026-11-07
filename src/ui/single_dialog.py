@@ -15,8 +15,7 @@ from PySide6.QtWidgets import (
     QProgressBar,
     QMessageBox,
 )
-from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QFont, QColor
+from PySide6.QtCore import Signal
 
 from src.cloudflare.zones import ZoneItem
 from src.security.validation import validate_destination_url

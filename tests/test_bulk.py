@@ -7,11 +7,7 @@ import pytest
 from PySide6.QtWidgets import QApplication
 from src.cloudflare.zones import ZoneItem
 from src.ui.bulk_dialog import BulkRedirectDialog
-from src.ui.workers import (
-    BulkCreateRedirectsWorker,
-    BulkDeleteRedirectsWorker,
-    BulkToggleRedirectsWorker,
-)
+from src.ui.workers import BulkCreateRedirectsWorker
 
 
 @pytest.fixture(scope="session")
@@ -210,7 +206,6 @@ def test_bulk_purge_worker_execution(qapp, monkeypatch):
         zone_items=[{"zone_id": "z1", "zone_name": "example.com"}],
         status_filter=301,
     )
-    res_301 = None
     worker.finished.connect(lambda res: setattr(worker, "res", res))
     worker.run()
     assert worker.res["success"] == 1
@@ -247,7 +242,7 @@ def test_find_zone_across_accounts(monkeypatch):
     assert err2 is None
 
     # Test unknown domain
-    acc_id3, label3, found_z3, err3 = find_zone_across_accounts("domain-asing-tidak-ada.xyz")
+    _, _, found_z3, err3 = find_zone_across_accounts("domain-asing-tidak-ada.xyz")
     assert found_z3 is None
     assert "tidak ditemukan" in err3.lower()
 

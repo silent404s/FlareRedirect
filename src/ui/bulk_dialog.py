@@ -15,7 +15,6 @@ Features:
 from typing import List, Dict, Any, Optional
 from PySide6.QtWidgets import (
     QDialog,
-    QWidget,
     QVBoxLayout,
     QHBoxLayout,
     QLabel,

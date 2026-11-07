@@ -16,11 +16,6 @@ from src.cloudflare.redirects import (
     delete_matching_redirects_for_domain,
 )
 from src.security.session import active_session
-from src.security.validation import (
-    check_live_http_redirect,
-    check_domain_public_ip,
-    is_cloudflare_ip,
-)
 from src.utils.errors import sanitize_message
 from src.utils.audit import session_audit
 
