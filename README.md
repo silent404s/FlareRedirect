@@ -1,9 +1,9 @@
-# ⚡ FlareRedirect (v1.3.2)
+# ⚡ FlareRedirect (v1.3.3)
 > **High Performance Cloudflare 301 Permanent Redirect Engine**  
 > Kelola ratusan aturan *Single Redirects (301 Permanent URL Forwarding)* di Cloudflare secara instan, aman, dan tanpa perantara pihak ketiga.
 
 [![Platform](https://img.shields.io/badge/Platform-Windows%2010%20%7C%2011%20(64--bit)-blue.svg)](#)
-[![Version](https://img.shields.io/badge/Version-v1.3.2-orange.svg)](#)
+[![Version](https://img.shields.io/badge/Version-v1.3.3-orange.svg)](#)
 [![Python](https://img.shields.io/badge/Python-3.12%20%7C%203.14-green.svg)](#)
 [![GUI](https://img.shields.io/badge/GUI-PySide6%20Qt-blueviolet.svg)](#)
 [![License](https://img.shields.io/badge/License-MIT-brightgreen.svg)](#)
@@ -16,11 +16,11 @@
 1. **Unduh / Buka Executable Berlabel Versi:**
    - Gunakan file versi terbaru di folder `dist/`:
      ```text
-     dist\FlareRedirect_v1.3.2.exe
+     dist\FlareRedirect_v1.3.3.exe
      ```
    - *(Setiap versi rilis selalu memiliki penamaan tag versi yang jelas)*.
 2. **Jalankan Aplikasi:**
-   - Klik dua kali pada `FlareRedirect_v1.3.2.exe`.
+   - Klik dua kali pada `FlareRedirect_v1.3.3.exe`.
    - *(Jika muncul Windows SmartScreen, klik **More info** &rarr; **Run anyway**)*.
 3. **Hubungkan Akun Cloudflare:**
    - Masuk ke menu **🔑 Kelola Akun** di pojok kanan atas.

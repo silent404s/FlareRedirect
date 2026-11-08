@@ -112,13 +112,14 @@ class FetchRedirectsWorker(QThread):
     finished = Signal(str, list)  # ruleset_id, rules
     error = Signal(str)
 
-    def __init__(self, zone_id: str, parent=None):
+    def __init__(self, zone_id: str, account_id: Optional[str] = None, parent=None):
         super().__init__(parent)
         self.zone_id = zone_id
+        self.account_id = account_id
 
     def run(self):
         try:
-            ruleset_id, rules = get_zone_redirect_ruleset(self.zone_id)
+            ruleset_id, rules = get_zone_redirect_ruleset(self.zone_id, account_id=self.account_id)
             self.finished.emit(ruleset_id or "", rules)
         except Exception as exc:
             self.error.emit(sanitize_message(str(exc)))

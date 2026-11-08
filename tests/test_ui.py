@@ -178,3 +178,32 @@ def test_connect_page_multi_account_persistence(qapp, tmp_path, monkeypatch):
     active_session.disconnect_all()
 
 
+def test_redirect_page_no_startup_eager_fetch_and_unconnected_account(qapp):
+    from src.ui.redirect_page import RedirectPage
+    from src.cloudflare.zones import ZoneItem
+    from src.security.session import active_session
+
+    active_session.disconnect_all()
+    page = RedirectPage()
+
+    z1 = ZoneItem({"id": "z_naga", "name": "naga-domain.com", "status": "active"}, account_label="NAGA")
+    z2 = ZoneItem({"id": "z_indra", "name": "indra-domain.com", "status": "active"}, account_label="Indra")
+
+    # 1. set_zones does NOT eagerly launch background worker on startup
+    page.set_zones([z1, z2])
+    assert page.zone_combo.count() == 2
+    assert not page.progress_bar.isVisible()
+
+    # 2. When zone belongs to unconnected account (NAGA is not in active_session)
+    toast_errors = []
+    page.show_toast.connect(lambda msg, err: toast_errors.append((msg, err)))
+    page.load_redirects_for_selected_zone()
+
+    # Must show friendly notice instead of making failing 403 API call
+    assert not page.progress_bar.isVisible()
+    assert "NAGA" in page.empty_lbl.text()
+    assert "belum terhubung" in page.empty_lbl.text()
+    assert len(toast_errors) == 0  # No 403 error toast popped up!
+
+
+

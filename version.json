@@ -1,7 +1,7 @@
 {
-  "version": "1.3.2",
+  "version": "1.3.3",
   "name": "FlareRedirect",
   "description": "High Performance Cloudflare 301 Redirect Engine",
-  "release_date": "2026-11-08",
-  "release_notes": "✨ Versi 1.3.2:\n- Perbaikan Penyimpanan Multi-Akun Cloudflare: Memperbaiki bug label overwrite saat menghubungkan banyak akun API (3-5 akun), sehingga seluruh akun tersimpan rapi di config.json dan tidak terhapus saat aplikasi dibuka ulang.\n- Deep-copy Konfigurasi Lokal: Menghilangkan mutasi referensi in-memory profil konfigurasi agar integritas sesi akun Cloudflare selalu terjaga.\n- Otomatis Rehydrate Sesi: Aplikasi secara otomatis memuat seluruh akun yang terpasang beserta domainnya saat dibuka kembali."
+  "release_date": "2026-11-09",
+  "release_notes": "✨ Versi 1.3.3:\n- Perbaikan Error 403 Saat Buka Aplikasi: Menghilangkan pemanggilan otomatis aturan redirect di latar belakang pada saat startup. Aturan redirect kini hanya dimuat secara on-demand saat pengguna membuka halaman Redirect Manager.\n- Penanganan Domain Antar-Akun Mandiri: Jika sebuah domain di cache lokal milik akun Cloudflare yang belum terhubung, sistem menampilkan pesan panduan yang jelas tanpa memicu request 403 Forbidden ke Cloudflare.\n- Sinkronisasi Multi-Akun Otomatis: Menghubungkan ID sesi aktif ke akun Cloudflare pemilik domain yang sesuai saat aturan redirect dimuat atau dimodifikasi."
 }

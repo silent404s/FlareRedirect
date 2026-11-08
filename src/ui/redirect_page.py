@@ -37,6 +37,7 @@ from src.security.validation import (
 from src.ui.components import DangerConfirmDialog
 from src.ui.bulk_dialog import BulkRedirectDialog
 from src.ui.delete_all_dialog import DeleteAllRedirectsDialog
+from src.security.session import active_session
 from src.ui.workers import (
     FetchRedirectsWorker,
     CreateRedirectWorker,
@@ -626,7 +627,8 @@ class RedirectPage(QWidget):
 
         if len(zones) > 0:
             self.zone_combo.setCurrentIndex(0)
-            self.load_redirects_for_selected_zone()
+            # Do NOT eagerly fetch redirects on background startup.
+            # Redirects are loaded on-demand when the user views or selects a zone.
         else:
             self.table.setRowCount(0)
             self.empty_lbl.setText("Belum ada zona domain yang tersedia.")
@@ -635,7 +637,10 @@ class RedirectPage(QWidget):
     def select_zone_by_id(self, zone_id: str):
         for i in range(self.zone_combo.count()):
             if self.zone_combo.itemData(i) == zone_id:
-                self.zone_combo.setCurrentIndex(i)
+                if self.zone_combo.currentIndex() == i:
+                    self.load_redirects_for_selected_zone()
+                else:
+                    self.zone_combo.setCurrentIndex(i)
                 break
 
     def load_redirects_for_selected_zone(self):
@@ -643,19 +648,49 @@ class RedirectPage(QWidget):
         if not zone_id:
             return
 
-        # Ensure active account matches selected zone's account
         matching_zone = next((z for z in self.zones if z.id == zone_id), None)
-        if matching_zone and matching_zone.account_id:
-            try:
-                active_session.switch_account(matching_zone.account_id)
-            except Exception:
-                pass
+
+        # Resolve which account owns this zone
+        target_acc = None
+        if matching_zone:
+            if matching_zone.account_label:
+                target_acc = active_session.get_account_by_label(matching_zone.account_label)
+            if not target_acc and matching_zone.account_id:
+                target_acc = active_session.get_account(matching_zone.account_id)
+
+        if not target_acc:
+            acc_id = active_session.find_account_id_for_zone(zone_id)
+            if acc_id:
+                target_acc = active_session.get_account(acc_id)
+
+        # If the owning account is not connected in the active session
+        if not target_acc:
+            acc_name = (matching_zone.account_label if matching_zone else "") or "tidak dikenal"
+            zname = matching_zone.name if matching_zone else "domain ini"
+            self.table.setRowCount(0)
+            self.table.hide()
+            self.empty_lbl.setText(
+                f"⚠️ Akun Cloudflare '{acc_name}' untuk domain '{zname}' belum terhubung ke aplikasi.\n\n"
+                f"Silakan hubungkan akun '{acc_name}' di menu '🔑 Kelola Akun' untuk mengelola aturan redirect."
+            )
+            self.empty_lbl.show()
+            self.progress_bar.hide()
+            self.refresh_btn.setEnabled(True)
+            self.add_btn.setEnabled(False)
+            return
+
+        # Switch active session to this account
+        try:
+            active_session.switch_account(target_acc.account_id)
+        except Exception:
+            pass
 
         self.progress_bar.show()
         self.refresh_btn.setEnabled(False)
-        self.add_btn.setEnabled(False)
+        self.add_btn.setEnabled(True)
+        self.empty_lbl.hide()
 
-        worker = FetchRedirectsWorker(zone_id, self)
+        worker = FetchRedirectsWorker(zone_id, account_id=target_acc.account_id, parent=self)
         worker.finished.connect(self._on_redirects_loaded)
         worker.error.connect(self._on_redirects_error)
         worker.start()
@@ -779,7 +814,25 @@ class RedirectPage(QWidget):
         self.progress_bar.hide()
         self.refresh_btn.setEnabled(True)
         self.add_btn.setEnabled(True)
-        self.show_toast.emit(f"Gagal memuat aturan redirect: {err_msg}", True)
+
+        zone_id = self.zone_combo.currentData()
+        matching_zone = next((z for z in self.zones if z.id == zone_id), None)
+        zname = matching_zone.name if matching_zone else "domain ini"
+        acc_name = matching_zone.account_label if matching_zone else "Cloudflare"
+
+        if "403" in err_msg:
+            self.table.setRowCount(0)
+            self.table.hide()
+            self.empty_lbl.setText(
+                f"⚠️ Akses Ditolak (HTTP 403) pada domain '{zname}'.\n\n"
+                f"Token API untuk akun '{acc_name}' tidak memiliki izin 'Single Redirect'.\n"
+                f"Silakan buka Cloudflare Dashboard → API Tokens, lalu tambahkan izin:\n"
+                f"• Zone - Single Redirect - Edit"
+            )
+            self.empty_lbl.show()
+            self.show_toast.emit(f"Akses ditolak (403): Token akun '{acc_name}' butuh izin Single Redirect.", True)
+        else:
+            self.show_toast.emit(f"Gagal memuat aturan redirect: {err_msg}", True)
 
     def _get_current_zone_info(self) -> tuple[Optional[str], str]:
         zid = self.zone_combo.currentData()

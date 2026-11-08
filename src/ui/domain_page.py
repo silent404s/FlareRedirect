@@ -201,10 +201,13 @@ class DomainPage(QWidget):
 
                 # Sinkronkan zones ke akun masing-masing di session in-memory
                 for acc in active_session.get_all_accounts():
-                    acc.zones = [
-                        z for z in self.all_zones
-                        if (z.account_id and z.account_id == acc.account_id) or (z.account_label and z.account_label == acc.label)
-                    ]
+                    matched = []
+                    for z in self.all_zones:
+                        if (z.account_label and z.account_label.lower() == acc.label.lower()) or (z.account_id and z.account_id == acc.account_id):
+                            z.account_id = acc.account_id
+                            z.account_label = acc.label
+                            matched.append(z)
+                    acc.zones = matched
 
                 self._filter_table()
                 self.zones_updated.emit(self.all_zones)

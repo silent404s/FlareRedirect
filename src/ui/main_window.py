@@ -265,6 +265,11 @@ class MainWindow(QMainWindow):
             for name, btn in self.nav_buttons.items():
                 btn.setChecked(name == page_name)
 
+            # Lazy load rules when user explicitly opens redirects page
+            if page_name == "redirects":
+                if self.redirect_page.table.rowCount() == 0 and self.redirect_page.zone_combo.count() > 0:
+                    self.redirect_page.load_redirects_for_selected_zone()
+
     def _refresh_account_switcher(self):
         accounts = active_session.get_all_accounts()
         if len(accounts) > 0:
