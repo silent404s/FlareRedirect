@@ -116,3 +116,65 @@ def test_redirect_page_list_selection(qapp):
     selected = page._get_selected_rules()
     assert len(selected) == 0
 
+
+def test_connect_page_multi_account_persistence(qapp, tmp_path, monkeypatch):
+    import src.config_manager as cm
+    from src.ui.connect_page import ConnectPage
+    from src.security.session import active_session
+
+    fake_config = tmp_path / "connect_test_config.json"
+    monkeypatch.setattr(cm, "get_config_path", lambda: fake_config)
+
+    active_session.disconnect_all()
+    page = ConnectPage()
+
+    # Simulate successfully connecting 5 distinct accounts
+    for i in range(1, 6):
+        res = {
+            "status": "active",
+            "zones": [],
+            "account_id": f"acc_{i}",
+            "label": f"Akun Cloudflare #{i}",
+            "auth_method": "token",
+            "token": f"token_secret_{i}",
+            "global_api_key": "",
+            "email": "",
+            "message": f"Akun Akun Cloudflare #{i} berhasil terhubung",
+        }
+        # Add to session as ConnectWorker does
+        active_session.add_account(label=res["label"], token=res["token"])
+        page._on_connect_success(res)
+
+    # 1. Verify in-memory session has 5 accounts
+    assert active_session.account_count == 5
+    # 2. Verify UI table has 5 rows
+    assert page.account_table.rowCount() == 5
+    # 3. Verify config.json has all 5 profiles saved
+    profiles = cm.get_profiles()
+    assert len(profiles) == 5
+    for i in range(1, 6):
+        assert f"Akun Cloudflare #{i}" in profiles
+        assert profiles[f"Akun Cloudflare #{i}"]["api_token"] == f"token_secret_{i}"
+
+    # 4. Simulate app restart: clear RAM
+    active_session.disconnect_all()
+    assert active_session.account_count == 0
+
+    # Rehydrate from config.json
+    for name, prof in cm.get_profiles().items():
+        active_session.add_account(label=name, token=prof["api_token"])
+
+    assert active_session.account_count == 5
+    page.refresh_account_table()
+    assert page.account_table.rowCount() == 5
+
+    # 5. Remove 1 account and verify 4 remain in config
+    acc_to_remove = active_session.get_all_accounts()[0]
+    active_session.remove_account(acc_to_remove.account_id)
+    cm.delete_profile(acc_to_remove.label)
+    assert active_session.account_count == 4
+    assert len(cm.get_profiles()) == 4
+    assert acc_to_remove.label not in cm.get_profiles()
+    active_session.disconnect_all()
+
+

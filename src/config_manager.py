@@ -10,6 +10,7 @@ SECURITY GUARANTEES:
 
 import json
 import sys
+import copy
 from pathlib import Path
 from typing import Dict, Any, Optional
 
@@ -19,6 +20,11 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "batch_size": 10,
     "theme": "dark",
 }
+
+
+def get_default_config() -> Dict[str, Any]:
+    """Returns a fresh deep copy of the default configuration."""
+    return copy.deepcopy(DEFAULT_CONFIG)
 
 
 def get_config_path() -> Path:
@@ -47,22 +53,24 @@ def load_config() -> Dict[str, Any]:
     """
     config_path = get_config_path()
     if not config_path.is_file():
-        return DEFAULT_CONFIG.copy()
+        return get_default_config()
 
     try:
         with open(config_path, "r", encoding="utf-8") as f:
             data = json.load(f)
             if not isinstance(data, dict):
-                return DEFAULT_CONFIG.copy()
+                return get_default_config()
 
-            merged = DEFAULT_CONFIG.copy()
+            merged = get_default_config()
             merged.update(data)
             if not isinstance(merged.get("api_profiles"), dict):
                 merged["api_profiles"] = {}
+            else:
+                merged["api_profiles"] = dict(merged["api_profiles"])
             return merged
     except Exception as exc:
         # Fallback to defaults on parse/read error
-        return DEFAULT_CONFIG.copy()
+        return get_default_config()
 
 
 def save_config(config: Dict[str, Any]) -> bool:
@@ -87,11 +95,12 @@ def save_profile(name: str, profile_data: Dict[str, Any], set_as_current: bool =
     """Adds or updates an account profile in config.json."""
     cfg = load_config()
     profiles = cfg.get("api_profiles", {})
-    profiles[name] = profile_data
+    clean_name = name.strip() if name and name.strip() else f"Akun CF #{len(profiles) + 1}"
+    profiles[clean_name] = profile_data
     cfg["api_profiles"] = profiles
 
     if set_as_current or not cfg.get("current_profile"):
-        cfg["current_profile"] = name
+        cfg["current_profile"] = clean_name
 
     return save_config(cfg)
 
@@ -100,11 +109,20 @@ def delete_profile(name: str) -> bool:
     """Deletes an account profile from config.json."""
     cfg = load_config()
     profiles = cfg.get("api_profiles", {})
+    target_key = None
     if name in profiles:
-        del profiles[name]
+        target_key = name
+    else:
+        for k in profiles:
+            if k.lower() == name.lower():
+                target_key = k
+                break
+
+    if target_key:
+        del profiles[target_key]
         cfg["api_profiles"] = profiles
 
-        if cfg.get("current_profile") == name:
+        if cfg.get("current_profile", "").lower() == target_key.lower():
             cfg["current_profile"] = next(iter(profiles.keys()), "")
 
         return save_config(cfg)
@@ -114,8 +132,18 @@ def delete_profile(name: str) -> bool:
 def set_current_profile(name: str) -> bool:
     """Updates the active profile name in config.json."""
     cfg = load_config()
-    if name in cfg.get("api_profiles", {}):
-        cfg["current_profile"] = name
+    profiles = cfg.get("api_profiles", {})
+    target_key = None
+    if name in profiles:
+        target_key = name
+    else:
+        for k in profiles:
+            if k.lower() == name.lower():
+                target_key = k
+                break
+
+    if target_key:
+        cfg["current_profile"] = target_key
         return save_config(cfg)
     return False
 

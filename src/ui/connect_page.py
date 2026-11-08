@@ -325,9 +325,16 @@ class ConnectPage(QWidget):
         tok = result.get("token", "")
         gkey = result.get("global_api_key", "")
         em = result.get("email", "")
+        account_id = result.get("account_id", "")
 
-        # Persist to local config.json if checked
-        if self.save_local_chk.isChecked() and final_label:
+        if account_id:
+            try:
+                active_session.switch_account(account_id)
+            except Exception:
+                pass
+
+        # Persist to local config.json so installed accounts are always preserved on restart
+        if final_label:
             profile_payload = {
                 "auth_method": auth_method,
                 "api_token": tok,

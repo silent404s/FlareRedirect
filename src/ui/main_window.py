@@ -368,6 +368,7 @@ class MainWindow(QMainWindow):
         self.all_zones = zones
         self.redirect_page.set_zones(zones)
         self.dashboard_page.update_metrics(len(zones), len(self.redirect_page.current_rules))
+        self.connect_page.refresh_account_table()
 
     def _on_redirects_count_changed(self, count: int):
         self.dashboard_page.update_metrics(len(self.all_zones), count)

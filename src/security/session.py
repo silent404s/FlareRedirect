@@ -134,8 +134,6 @@ class MultiAccountSessionManager:
         email: Optional[str] = None,
     ) -> str:
         """Adds a new Cloudflare account session in-memory."""
-        clean_label = label.strip() if label and label.strip() else f"Akun CF #{len(self._accounts) + 1}"
-
         if auth_method == "key":
             if not global_api_key or not global_api_key.strip():
                 raise ValueError("Global API Key tidak boleh kosong.")
@@ -144,6 +142,24 @@ class MultiAccountSessionManager:
         else:
             if not token or not token.strip():
                 raise ValueError("Token tidak boleh kosong.")
+
+        existing_labels = {acc.label.lower() for acc in self._accounts.values()}
+        raw_label = label.strip() if label and label.strip() else ""
+
+        if not raw_label:
+            idx = 1
+            while f"akun cf #{idx}".lower() in existing_labels:
+                idx += 1
+            clean_label = f"Akun CF #{idx}"
+        else:
+            clean_label = raw_label
+            if clean_label.lower() in existing_labels:
+                suffix = 2
+                candidate = f"{clean_label} ({suffix})"
+                while candidate.lower() in existing_labels:
+                    suffix += 1
+                    candidate = f"{clean_label} ({suffix})"
+                clean_label = candidate
 
         account_id = f"acc_{uuid.uuid4().hex[:8]}"
         session = AccountSession(
@@ -162,6 +178,10 @@ class MultiAccountSessionManager:
             self._active_id = account_id
 
         return account_id
+
+    def get_account(self, account_id: str) -> Optional[AccountSession]:
+        """Gets AccountSession by account_id."""
+        return self._accounts.get(account_id)
 
     def set_token(self, token: str, label: str = "Akun Utama", user_info: Optional[str] = None) -> str:
         """Legacy helper for backward compatibility."""

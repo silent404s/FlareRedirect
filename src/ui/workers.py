@@ -60,10 +60,13 @@ class ConnectWorker(QThread):
                 global_api_key=self.global_api_key,
                 email=self.email,
             )
+            # Switch active session to this newly connected account
+            active_session.switch_account(account_id)
+
             zones = fetch_all_zones(account_id=account_id)
             
-            acc_obj = active_session.active_account
-            final_label = acc_obj.label if acc_obj else self.label
+            acc_obj = active_session.get_account(account_id)
+            final_label = acc_obj.label if acc_obj else (self.label.strip() or "Akun CF")
             session_audit.record("CONNECT_ACCOUNT", final_label, "SUCCESS", f"Zones count: {len(zones)}")
             
             self.finished.emit({
