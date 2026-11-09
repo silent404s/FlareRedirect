@@ -41,6 +41,7 @@ file_version_info.txt
 htmlcov/
 
 # IDE & OS files
+.taste-skill/
 .vscode/
 .idea/
 *.swp

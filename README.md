@@ -34,6 +34,18 @@
 
 ---
 
+## 🌐 CARA BARU: Web Dashboard Lokal (HTML5 + Zero Lag untuk 5.000+ Domain)
+> **Pilihan Paling Ringan & Cepat:** Menjalankan dashboard langsung di browser web lokal Anda (`http://localhost:5050`). Memproses ribuan domain secara instan tanpa lag desktop!
+
+1. **Jalankan 1-Klik:**
+   - Klik dua kali file **`start_web.bat`** di folder utama atau di dalam folder `web/start_web.bat`.
+2. **Dashboard Otomatis Terbuka di Browser:**
+   - Browser (Chrome/Edge) otomatis terbuka di `http://localhost:5050`.
+   - Semua data akun (`config.json`) dan cache domain (`data/domains_cache.json`) otomatis terhubung tanpa setup ulang.
+   - Dilengkapi fitur: **Instant Search 0ms**, **Paginasi Cepat**, **Cek Live Redirect Multi-Threaded**, **Bulk Redirect**, dan **Quick Live Tracer**.
+
+---
+
 ## 💻 CARA MENJALANKAN DARI SOURCE CODE (Untuk Developer)
 
 Jika Anda ingin menjalankan atau memodifikasi script Python secara langsung:
