@@ -12,7 +12,7 @@ import threading
 from pathlib import Path
 from http.server import ThreadingHTTPServer, SimpleHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import webbrowser
 
 # Ensure project root is in sys.path
@@ -332,7 +332,7 @@ class FlareWebHandler(SimpleHTTPRequestHandler):
                     with ThreadPoolExecutor(max_workers=15) as executor:
                         future_to_dom = {executor.submit(check_live_redirect, d): d for d in doms}
                         idx = 0
-                        for future in concurrent.futures.as_completed(future_to_dom):
+                        for future in as_completed(future_to_dom):
                             d = future_to_dom[future]
                             idx += 1
                             try:
