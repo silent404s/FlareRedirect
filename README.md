@@ -1,135 +1,100 @@
-# ⚡ FlareRedirect (v1.4.1)
-> **High Performance Cloudflare 301 Permanent Redirect Engine**  
-> Kelola ratusan aturan *Single Redirects (301 Permanent URL Forwarding)* di Cloudflare secara instan, aman, dan tanpa perantara pihak ketiga.
+# ⚡ FlareRedirect Web (Localhost Engine)
+> **High Performance Cloudflare 301/302 Redirect Manager & Live Domain Tracer**  
+> Sistem web lokal mandiri (*localhost*) berkecepatan tinggi untuk mengelola, melacak, dan mengalihkan ribuan domain Cloudflare secara instan, aman, dan tanpa perantara pihak ketiga.
 
-[![Platform](https://img.shields.io/badge/Platform-Windows%2010%20%7C%2011%20(64--bit)-blue.svg)](#)
-[![Version](https://img.shields.io/badge/Version-v1.4.1-orange.svg)](#)
-[![Python](https://img.shields.io/badge/Python-3.12%20%7C%203.14-green.svg)](#)
-[![GUI](https://img.shields.io/badge/GUI-PySide6%20Qt-blueviolet.svg)](#)
+[![Platform](https://img.shields.io/badge/Platform-Localhost%20Web-blue.svg)](#)
+[![Version](https://img.shields.io/badge/Version-v1.4.1%20Web-orange.svg)](#)
+[![Python](https://img.shields.io/badge/Python-3.10%20%7C%203.14-green.svg)](#)
+[![Zero Dependency Server](https://img.shields.io/badge/Server-Zero%20Dependency%20HTTP-success.svg)](#)
 [![License](https://img.shields.io/badge/License-MIT-brightgreen.svg)](#)
 
 ---
 
-## 🚀 CARA CEPAT (Langsung Pakai File .EXE)
-> **Rekomendasi Utama:** Anda **tidak perlu menginstal Python atau dependensi apapun**. Semua modul sudah dikemas ke dalam satu file executable mandiri berlabel versi resmi.
+## 🚀 CARA MENJALANKAN (1-KLIK)
 
-1. **Unduh / Buka Executable Berlabel Versi:**
-   - Gunakan file versi terbaru di folder `dist/`:
+Tidak perlu setup server hosting, domain publik, atau VPS. Sistem berjalan **100% di komputer lokal Anda**:
+
+1. **Jalankan Skrip:**
+   - Cukup klik dua kali file **`run.bat`** atau **`start_web.bat`**.
+2. **Dashboard Otomatis Terbuka:**
+   - Browser default Anda (Chrome/Edge/Firefox) akan langsung membuka alamat:
      ```text
-     dist\FlareRedirect_v1.4.1.exe
+     http://localhost:5050
      ```
-   - *(Setiap versi rilis selalu memiliki penamaan tag versi yang jelas)*.
-2. **Jalankan Aplikasi:**
-   - Klik dua kali pada `FlareRedirect_v1.4.1.exe`.
-   - *(Jika muncul Windows SmartScreen, klik **More info** &rarr; **Run anyway**)*.
-3. **Hubungkan Akun Cloudflare:**
-   - Masuk ke menu **🔑 Kelola Akun** di pojok kanan atas.
-   - Masukkan nama akun dan **API Token** (atau Global API Key + Email).
-   - Pastikan opsi **"💾 Simpan ke config.json"** dicentang agar akun otomatis terhubung setiap kali aplikasi dibuka.
-4. **Mulai Redirect Domain:**
-   - Masuk ke menu **🌐 Domains** untuk melihat seluruh domain Anda.
-   - **Local Cache & High-Speed Pagination:** Domain tersimpan rapi dan ditampilkan dengan sistem paginasi responsif (bebas lag/freeze untuk ribuan domain).
-   - **Pembersihan Cache Sisa:** Tombol **"🧹 Bersihkan Cache Sisa"** otomatis menghapus domain yatim dari akun lama yang sudah diputuskan.
-   - Gunakan tombol **⚡ Bulk Redirect** untuk mengalihkan puluhan/ratusan domain sekaligus secara otomatis lintas akun!
+3. **Selesai!** Dashboard siap digunakan dengan tampilan modern, responsif, dan ultra-cepat.
 
 ---
 
-## 🌐 CARA BARU: Web Dashboard Lokal (HTML5 + Zero Lag untuk 5.000+ Domain)
-> **Pilihan Paling Ringan & Cepat:** Menjalankan dashboard langsung di browser web lokal Anda (`http://localhost:5050`). Memproses ribuan domain secara instan tanpa lag desktop!
+## ✨ FITUR UTAMA SISTEM WEB LOKAL
 
-1. **Jalankan 1-Klik:**
-   - Klik dua kali file **`start_web.bat`** di folder utama atau di dalam folder `web/start_web.bat`.
-2. **Dashboard Otomatis Terbuka di Browser:**
-   - Browser (Chrome/Edge) otomatis terbuka di `http://localhost:5050`.
-   - Semua data akun (`config.json`) dan cache domain (`data/domains_cache.json`) otomatis terhubung tanpa setup ulang.
-   - Dilengkapi fitur: **Instant Search 0ms**, **Paginasi Cepat**, **Cek Live Redirect Multi-Threaded**, **Bulk Redirect**, dan **Quick Live Tracer**.
+### 1. Zero-Lag Domain Manager (Untuk 5.000+ Domain)
+* **Pencarian 0ms:** Filter dan cari nama domain secara instan via memori browser tanpa loading lambat.
+* **Paginasi Cepat:** Pilihan tampilan fleksibel: `50`, `100`, `250`, `500`, atau `Semua Domain`.
+* **Multi-Selection:** Centang perorangan atau *Select All* yang tersimpan lintas perpindahan halaman.
+
+### 2. Direct Live Redirect Checker (Bebas Error 403)
+* Menguji status pengalihan langsung ke internet (*HTTP HEAD/GET*), mendeteksi apakah domain aktif (200 OK), meredirect (301 / 302), atau memiliki **rantai redirect berganda (>1x redirect)**.
+* **100% Bebas Error 403 Ruleset Cloudflare** karena pengetesan dilakukan secara langsung pada respons domain.
+* Dilengkapi filter khusus: **⚠️ Multiple Redirect (>1x)**, **Normal 1x**, **Tanpa Redirect**, dan **Belum Diperiksa**.
+* **Quick Live Tracer:** Kotak uji instan di bagian atas untuk melacak redirect domain manapun secara real-time.
+
+### 3. Setup Bulk Redirect & Single Redirect
+* Pasang aturan pengalihan 301 ke puluhan atau ratusan domain sekaligus secara otomatis.
+* Dukungan multi-akun: domain dari berbagai akun Cloudflare berbeda dapat dialihkan secara bersamaan tanpa tertukar token.
+* Pilihan *Preserve Path* untuk meneruskan path URL domain asal ke domain tujuan.
+
+### 4. Manajemen Akun Multi-Profile & Auto-Prune Cache
+* Hubungkan banyak akun Cloudflare menggunakan API Token atau Global API Key.
+* **Pembersihan Cache Sisa (Auto-Prune):** Tombol **"🧹 Bersihkan Cache"** otomatis membuang domain yatim dari akun lama yang sudah tidak terpakai, menjaga sistem tetap bersih dan bebas bug token.
 
 ---
 
-## 💻 CARA MENJALANKAN DARI SOURCE CODE (Untuk Developer)
+## 📁 STRUKTUR FOLDER PROYEK
 
-Jika Anda ingin menjalankan atau memodifikasi script Python secara langsung:
-
-### 1. Buka Terminal / CMD di Folder Proyek
-```powershell
-cd C:\Users\skylark\FlarePilot
+```text
+FlareRedirect/
+├── data/
+│   └── domains_cache.json     # Cache data domain lokal (aman & private)
+├── src/
+│   ├── cloudflare/            # Mesin komunikasi Cloudflare API (Zones, Redirects, Client)
+│   ├── security/              # Validasi domain, sesi akun, dan Direct Live Checker
+│   ├── utils/                 # Utility sanitize error & audit log
+│   ├── config.py              # Konfigurasi sistem dasar
+│   └── config_manager.py      # Manajemen profil akun dan cache file
+├── web/
+│   ├── css/
+│   │   └── style.css          # Styling CSS terpusat (Data-Terminal dark theme)
+│   ├── js/
+│   │   └── main.js            # Controller frontend (pencarian 0ms & worker tracer)
+│   ├── index.html             # Tampilan dashboard web utama
+│   ├── server.py              # Server HTTP Python lokal (REST API & static server)
+│   └── start_web.bat          # Batch runner di folder web
+├── tests/                     # Unit & integration tests (71 passing tests)
+├── config.json                # Penyimpanan akun Cloudflare lokal (ignored by git)
+├── main.py                    # Entry point utama (menjalankan web server lokal)
+├── requirements.txt           # Dependensi Python minimal (httpx, idna, dotenv)
+├── run.bat                    # Skrip 1-klik runner utama
+├── start_web.bat              # Skrip 1-klik runner shortcut
+└── README.md
 ```
-*(atau sesuaikan dengan direktori tempat Anda meletakkan folder `FlareRedirect`)*.
 
-### 2. Cara Cepat (1-Klik via Batch Script)
-Cukup klik dua kali file:
-```cmd
-run.bat
-```
+---
 
-### 3. Atau Jalankan Manual via Terminal:
+## 🔒 JAMINAN KEAMANAN & PRIVASI LOKAL
+* **Zero Cloud Leak:** Semua token, kunci API, dan data cache domain hanya tersimpan di komputer lokal Anda (`config.json` dan `data/domains_cache.json`).
+* Tidak ada server perantara eksternal. Semua komunikasi HTTP langsung dari komputer lokal Anda ke Cloudflare API resmi (`api.cloudflare.com`).
+* Server lokal hanya mengikat (*bind*) ke `127.0.0.1` (localhost), sehingga tidak dapat diakses dari jaringan luar/publik.
+
+---
+
+## 🛠️ JALANKAN DARI TERMINAL (OPSIONAL)
+
+Jika ingin menjalankan via command prompt atau terminal:
 ```powershell
-# 1. Buat dan aktifkan virtual environment (opsional)
-python -m venv venv
-.\venv\Scripts\activate
-
-# 2. Pasang dependensi
+# Pasang dependensi minimal (cukup sekali):
 pip install -r requirements.txt
 
-# 3. Jalankan aplikasi
+# Jalankan server:
 python main.py
 ```
-
----
-
-## 🔨 CARA BUILD ULANG FILE .EXE (Dengan Nomor Versi)
-
-Untuk mengompilasi ulang kode Python menjadi file Windows `.exe` mandiri dengan metadata versi:
-
-### Menggunakan Skrip 1-Klik:
-```cmd
-build_windows.bat
-```
-
-### Atau via Python:
-```powershell
-python build_exe.py
-```
-
-Skrip ini secara otomatis:
-1. Membaca nomor versi dari `version.json` (saat ini `v1.3.1`).
-2. Menanamkan metadata resource Windows (*File Version: 1.3.1.0, Product Version: 1.3.1.0, Icon*).
-3. Mengemas aplikasi menjadi standalone executable tanpa konsol CMD.
-4. Menghasilkan file output berlabel versi resmi di folder `dist/`:
-   - `dist\FlareRedirect_v1.3.1.exe` (Selalu berlabel tag versi)
-
----
-
-## 🔑 IZIN MINIMUM CLOUDFLARE TOKEN
-
-Di portal [Cloudflare API Tokens](https://dash.cloudflare.com/profile/api-tokens), buat **Custom Token** dengan izin minimum:
-- **Zone** &rarr; **Zone** &rarr; **Read** *(Membaca daftar zona domain)*
-- **Zone** &rarr; **Single Redirect** &rarr; **Edit** *(Membuat & mengedit aturan redirect 301)*
-
-*(Aplikasi juga mendukung autentikasi menggunakan **Global API Key + Email** jika akun Anda memerlukannya).*
-
----
-
-## 🛡️ PRIVASI & KEAMANAN GITHUB (Zero-Leak)
-
-- **Aman Dari Push:** Seluruh token dan profil akun disimpan di file lokal `config.json` dan `data/` yang secara mutlak **dikecualikan oleh `.gitignore`**.
-- File kredensial pribadi dan cache domain lokal Anda **tidak akan pernah ter-push ke GitHub**.
-- Untuk melakukan push pembaruan kode ke repository GitHub:
-  ```cmd
-  git_push.bat
-  ```
-
----
-
-## 🧪 PENGUJIAN UNIT (UNIT TESTS)
-
-Untuk memverifikasi keutuhan seluruh engine validasi, proxy check, local cache, dan API client:
-```powershell
-pytest -v
-```
-*(Saat ini 58/58 unit tests terverifikasi 100% lulus)*.
-
----
-
-## 📄 LISENSI
-Didistribusikan di bawah lisensi MIT. Bebas digunakan dan disesuaikan untuk kebutuhan automasi domain Anda.
+Akses web dashboard di: `http://localhost:5050`
