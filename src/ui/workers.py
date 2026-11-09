@@ -16,6 +16,7 @@ from src.cloudflare.redirects import (
     delete_matching_redirects_for_domain,
 )
 from src.security.session import active_session
+from src.security.validation import check_live_redirect
 from src.utils.errors import sanitize_message
 from src.utils.audit import session_audit
 
@@ -632,5 +633,68 @@ class BulkPurgeRedirectsWorker(QThread):
             })
         except Exception as exc:
             self.error.emit(sanitize_message(str(exc)))
+
+
+class CheckLiveRedirectsWorker(QThread):
+    """Background worker that inspects live HTTP/HTTPS redirects for a list of domains concurrently."""
+    progress = Signal(int, int, str, dict)  # current, total, domain, result_dict
+    finished = Signal(dict)
+    error = Signal(str)
+
+    def __init__(self, domains: List[str], max_workers: int = 15, timeout: float = 6.0, parent=None):
+        super().__init__(parent)
+        self.domains = domains
+        self.max_workers = max_workers
+        self.timeout = timeout
+        self._is_cancelled = False
+
+    def cancel(self):
+        self._is_cancelled = True
+
+    def run(self):
+        try:
+            results: Dict[str, Dict[str, Any]] = {}
+            total = len(self.domains)
+            if total == 0:
+                self.finished.emit({})
+                return
+
+            import concurrent.futures
+            completed_count = 0
+
+            with concurrent.futures.ThreadPoolExecutor(max_workers=self.max_workers) as executor:
+                future_to_domain = {
+                    executor.submit(check_live_redirect, d, self.timeout): d
+                    for d in self.domains
+                }
+
+                for future in concurrent.futures.as_completed(future_to_domain):
+                    if self._is_cancelled:
+                        break
+
+                    domain = future_to_domain[future]
+                    try:
+                        res = future.result()
+                    except Exception as exc:
+                        res = {
+                            "domain": domain,
+                            "status_code": None,
+                            "target_url": "",
+                            "final_url": "",
+                            "hops": 0,
+                            "is_multiple": False,
+                            "has_redirect": False,
+                            "chain": [],
+                            "error": sanitize_message(str(exc)),
+                        }
+
+                    results[domain.lower()] = res
+                    completed_count += 1
+                    self.progress.emit(completed_count, total, domain, res)
+
+            self.finished.emit(results)
+        except Exception as exc:
+            self.error.emit(sanitize_message(str(exc)))
+
 
 

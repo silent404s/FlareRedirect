@@ -206,4 +206,70 @@ def test_redirect_page_no_startup_eager_fetch_and_unconnected_account(qapp):
     assert len(toast_errors) == 0  # No 403 error toast popped up!
 
 
+def test_domain_page_live_redirect_filter_and_alert(qapp):
+    from src.ui.domain_page import DomainPage
+    from src.cloudflare.zones import ZoneItem
+
+    page = DomainPage()
+    z1 = ZoneItem({"id": "z1", "name": "single-redir.com", "status": "active"}, account_label="Indra")
+    z2 = ZoneItem({"id": "z2", "name": "multi-redir.com", "status": "active"}, account_label="Indra")
+    z3 = ZoneItem({"id": "z3", "name": "direct-site.com", "status": "active"}, account_label="Indra")
+
+    page.all_zones = [z1, z2, z3]
+    page.redirect_checks_cache = {
+        "single-redir.com": {
+            "status_code": 301,
+            "target_url": "https://target1.com",
+            "hops": 1,
+            "is_multiple": False,
+            "has_redirect": True,
+            "chain": ["https://target1.com"],
+        },
+        "multi-redir.com": {
+            "status_code": 302,
+            "target_url": "https://final2.com",
+            "hops": 2,
+            "is_multiple": True,
+            "has_redirect": True,
+            "chain": ["https://hop1.com", "https://final2.com"],
+        },
+        "direct-site.com": {
+            "status_code": 200,
+            "target_url": "",
+            "hops": 0,
+            "is_multiple": False,
+            "has_redirect": False,
+            "chain": [],
+        },
+    }
+
+    # 1. Filter: All
+    page._filter_table()
+    assert page.table.rowCount() == 3
+
+    # 2. Filter: Multiple (>1x)
+    idx_mult = page.redirect_filter_combo.findData("multiple")
+    page.redirect_filter_combo.setCurrentIndex(idx_mult)
+    assert page.table.rowCount() == 1
+    assert page.table.item(0, 1).text() == "multi-redir.com"
+    target_text = page.table.item(0, 4).text()
+    assert "⚠️" in target_text
+    assert "2x" in target_text
+
+    # 3. Filter: Single (1x)
+    idx_single = page.redirect_filter_combo.findData("single")
+    page.redirect_filter_combo.setCurrentIndex(idx_single)
+    assert page.table.rowCount() == 1
+    assert page.table.item(0, 1).text() == "single-redir.com"
+    assert "✅" in page.table.item(0, 4).text()
+
+    # 4. Filter: None (200 OK)
+    idx_none = page.redirect_filter_combo.findData("none")
+    page.redirect_filter_combo.setCurrentIndex(idx_none)
+    assert page.table.rowCount() == 1
+    assert page.table.item(0, 1).text() == "direct-site.com"
+    assert "○" in page.table.item(0, 4).text()
+
+
+
 

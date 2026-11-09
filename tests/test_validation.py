@@ -138,3 +138,90 @@ def test_is_cloudflare_ip():
     assert is_cloudflare_ip("1.1.1.1") is False
     assert is_cloudflare_ip("8.8.8.8") is False
     assert is_cloudflare_ip("Gagal Resolusi IP") is False
+
+
+def test_check_live_redirect_single_301(monkeypatch):
+    import httpx
+    from src.security.validation import check_live_redirect
+
+    class MockResponse:
+        def __init__(self, url, status_code, history=None):
+            self.url = httpx.URL(url)
+            self.status_code = status_code
+            self.history = history or []
+
+    class MockHistoryItem:
+        def __init__(self, url, status_code, location):
+            self.url = httpx.URL(url)
+            self.status_code = status_code
+            self.headers = {"Location": location}
+
+    def fake_get(url, *args, **kwargs):
+        hist = [MockHistoryItem("https://mysite.com", 301, "https://destination.com/landing")]
+        return MockResponse("https://destination.com/landing", 200, history=hist)
+
+    monkeypatch.setattr("httpx.Client.get", fake_get)
+
+    res = check_live_redirect("mysite.com")
+    assert res["domain"] == "mysite.com"
+    assert res["status_code"] == 301
+    assert res["target_url"] == "https://destination.com/landing"
+    assert res["hops"] == 1
+    assert res["is_multiple"] is False
+    assert res["has_redirect"] is True
+
+
+def test_check_live_redirect_multiple_hops(monkeypatch):
+    import httpx
+    from src.security.validation import check_live_redirect
+
+    class MockResponse:
+        def __init__(self, url, status_code, history=None):
+            self.url = httpx.URL(url)
+            self.status_code = status_code
+            self.history = history or []
+
+    class MockHistoryItem:
+        def __init__(self, url, status_code, location):
+            self.url = httpx.URL(url)
+            self.status_code = status_code
+            self.headers = {"Location": location}
+
+    def fake_get(url, *args, **kwargs):
+        hist = [
+            MockHistoryItem("https://mysite.com", 301, "https://intermediate.com"),
+            MockHistoryItem("https://intermediate.com", 302, "https://finaltarget.com"),
+        ]
+        return MockResponse("https://finaltarget.com", 200, history=hist)
+
+    monkeypatch.setattr("httpx.Client.get", fake_get)
+
+    res = check_live_redirect("mysite.com")
+    assert res["hops"] == 2
+    assert res["is_multiple"] is True  # Alert trigger!
+    assert res["status_code"] == 301
+    assert "https://finaltarget.com" in res["target_url"]
+
+
+def test_check_live_redirect_no_redirect(monkeypatch):
+    import httpx
+    from src.security.validation import check_live_redirect
+
+    class MockResponse:
+        def __init__(self, url, status_code):
+            self.url = httpx.URL(url)
+            self.status_code = status_code
+            self.history = []
+
+    def fake_get(url, *args, **kwargs):
+        return MockResponse("https://directsite.com", 200)
+
+    monkeypatch.setattr("httpx.Client.get", fake_get)
+
+    res = check_live_redirect("directsite.com")
+    assert res["hops"] == 0
+    assert res["is_multiple"] is False
+    assert res["has_redirect"] is False
+    assert res["status_code"] == 200
+    assert res["target_url"] == ""
+

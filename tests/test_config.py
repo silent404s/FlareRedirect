@@ -8,7 +8,7 @@ from src.config import Settings
 def test_settings_defaults():
     s = Settings()
     assert s.APP_NAME == "FlareRedirect"
-    assert s.APP_VERSION == "1.3.3"
+    assert s.APP_VERSION == "1.4.0"
     assert s.APP_ENV in ("production", "development", "testing")
     assert s.CLOUDFLARE_API_BASE_URL == "https://api.cloudflare.com/client/v4"
     assert s.TIMEOUT_CONNECT == 10.0
@@ -125,6 +125,37 @@ def test_domains_cache_crud(tmp_path, monkeypatch):
     assert not fake_cache.is_file()
     cleared = cm.load_cached_domains()
     assert cleared["zones"] == []
+
+
+def test_cached_redirect_checks_persistence(tmp_path, monkeypatch):
+    import src.config_manager as cm
+
+    fake_cache = tmp_path / "data" / "domains_cache.json"
+    monkeypatch.setattr(cm, "get_domains_cache_path", lambda: fake_cache)
+    monkeypatch.setattr(cm, "get_data_dir", lambda: tmp_path / "data")
+
+    # Initially empty
+    assert cm.load_cached_redirect_checks() == {}
+
+    # Save multiple check results
+    checks = {
+        "domain1.com": {"status_code": 301, "target_url": "https://dest1.com", "hops": 1, "is_multiple": False},
+        "domain2.com": {"status_code": 302, "target_url": "https://dest2.com", "hops": 2, "is_multiple": True},
+    }
+    cm.save_cached_redirect_checks(checks)
+
+    # Load and verify
+    loaded = cm.load_cached_redirect_checks()
+    assert len(loaded) == 2
+    assert loaded["domain1.com"]["hops"] == 1
+    assert loaded["domain2.com"]["is_multiple"] is True
+
+    # Update single check
+    cm.update_cached_redirect_check("domain3.com", {"status_code": 200, "hops": 0, "is_multiple": False})
+    updated = cm.load_cached_redirect_checks()
+    assert len(updated) == 3
+    assert "domain3.com" in updated
+
 
 
 

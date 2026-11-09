@@ -11,7 +11,8 @@ Ensures:
 """
 
 import re
-from urllib.parse import urlsplit
+from urllib.parse import urlsplit, urljoin
+from datetime import datetime
 import idna
 import socket
 from typing import Tuple, Optional, Dict, Any
@@ -360,4 +361,130 @@ def is_cloudflare_ip(ip: str) -> bool:
         "162.158.", "162.159.", "190.93.", "197.234.", "198.41."
     )
     return any(ip.startswith(p) for p in cf_prefixes)
+
+
+def check_live_redirect(domain: str, timeout: float = 6.0) -> Dict[str, Any]:
+    """Inspects live HTTP/HTTPS redirect behavior for a domain directly over the network.
+    Traces the entire redirect chain, counts hops, detects status codes (301, 302, etc.),
+    and identifies multiple redirects (> 1 hop) or redirect loops.
+
+    Returns:
+        dict: {
+            "domain": str,
+            "status_code": Optional[int],  # 301, 302, 200, etc.
+            "target_url": str,             # Destination URL (empty if 200 OK / no redirect)
+            "final_url": str,              # Final landing URL
+            "hops": int,                   # Count of redirects
+            "is_multiple": bool,           # True if hops > 1 (Alert condition)
+            "has_redirect": bool,          # True if hops >= 1
+            "chain": List[str],            # Traced URL hops
+            "checked_at": str,             # Timestamp YYYY-MM-DD HH:MM:SS
+            "error": Optional[str],        # Error message if unreachable
+        }
+    """
+    clean_host = clean_domain_input(domain)
+    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    protocols = ["https", "http"]
+    last_error = None
+
+    for proto in protocols:
+        start_url = f"{proto}://{clean_host}"
+        try:
+            with httpx.Client(
+                follow_redirects=True,
+                timeout=timeout,
+                verify=False,
+                headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) FlareRedirect-LiveCheck/1.3"},
+            ) as client:
+                resp = client.get(start_url)
+                history = resp.history
+
+                actual_hops = []
+                for h in history:
+                    loc = h.headers.get("Location", "")
+                    from_u = str(h.url)
+                    to_u = urljoin(from_u, loc)
+
+                    from_p = urlsplit(from_u)
+                    to_p = urlsplit(to_u)
+
+                    # Ignore same-host http->https protocol upgrade
+                    if (
+                        from_p.scheme == "http"
+                        and to_p.scheme == "https"
+                        and from_p.netloc.lower() == to_p.netloc.lower()
+                        and from_p.path == to_p.path
+                    ):
+                        continue
+
+                    actual_hops.append({
+                        "status_code": h.status_code,
+                        "from_url": from_u,
+                        "target_url": to_u,
+                    })
+
+                hops_count = len(actual_hops)
+                final_dest = str(resp.url)
+
+                if hops_count > 0:
+                    primary_target = actual_hops[-1]["target_url"] if hops_count > 1 else actual_hops[0]["target_url"]
+                    initial_status = actual_hops[0]["status_code"]
+                elif len(history) > 0:
+                    primary_target = ""
+                    initial_status = resp.status_code
+                    hops_count = 0
+                else:
+                    primary_target = ""
+                    initial_status = resp.status_code
+                    hops_count = 0
+
+                return {
+                    "domain": clean_host,
+                    "status_code": initial_status,
+                    "target_url": primary_target,
+                    "final_url": final_dest,
+                    "hops": hops_count,
+                    "is_multiple": hops_count > 1,
+                    "has_redirect": hops_count > 0,
+                    "chain": [h["target_url"] for h in actual_hops],
+                    "checked_at": now_str,
+                    "error": None,
+                }
+        except httpx.TooManyRedirects:
+            return {
+                "domain": clean_host,
+                "status_code": 310,
+                "target_url": "Redirect Loop (> 10x)",
+                "final_url": "",
+                "hops": 10,
+                "is_multiple": True,
+                "has_redirect": True,
+                "chain": [],
+                "checked_at": now_str,
+                "error": "Redirect Loop (> 10x)",
+            }
+        except Exception as exc:
+            last_error = str(exc)
+            continue
+
+    err_str = "Koneksi Gagal / Timeout"
+    if last_error:
+        if "timeout" in last_error.lower():
+            err_str = "Timeout (Server Lambat)"
+        elif "nameresolution" in last_error.lower() or "getaddrinfo" in last_error.lower():
+            err_str = "DNS / Host Unreachable"
+
+    return {
+        "domain": clean_host,
+        "status_code": None,
+        "target_url": "",
+        "final_url": "",
+        "hops": 0,
+        "is_multiple": False,
+        "has_redirect": False,
+        "chain": [],
+        "checked_at": now_str,
+        "error": err_str,
+    }
 

@@ -172,29 +172,32 @@ def get_domains_cache_path() -> Path:
 def load_cached_domains() -> Dict[str, Any]:
     """Loads cached Cloudflare zones and redirect targets from local data/domains_cache.json.
     Returns:
-        dict: {"zones": [...], "targets": {...}, "last_updated": "..."} or empty dict on error.
+        dict: {"zones": [...], "targets": {...}, "redirect_checks": {...}, "last_updated": "..."} or empty dict on error.
     """
     cache_path = get_domains_cache_path()
     if not cache_path.is_file():
-        return {"zones": [], "targets": {}, "last_updated": ""}
+        return {"zones": [], "targets": {}, "redirect_checks": {}, "last_updated": ""}
 
     try:
         with open(cache_path, "r", encoding="utf-8") as f:
             data = json.load(f)
             if not isinstance(data, dict):
-                return {"zones": [], "targets": {}, "last_updated": ""}
+                return {"zones": [], "targets": {}, "redirect_checks": {}, "last_updated": ""}
             if "zones" not in data or not isinstance(data["zones"], list):
                 data["zones"] = []
             if "targets" not in data or not isinstance(data["targets"], dict):
                 data["targets"] = {}
+            if "redirect_checks" not in data or not isinstance(data["redirect_checks"], dict):
+                data["redirect_checks"] = {}
             return data
     except Exception:
-        return {"zones": [], "targets": {}, "last_updated": ""}
+        return {"zones": [], "targets": {}, "redirect_checks": {}, "last_updated": ""}
 
 
 def save_cached_domains(
     zones: List[Any],
     targets: Optional[Dict[str, str]] = None,
+    redirect_checks: Optional[Dict[str, Any]] = None,
 ) -> bool:
     """Saves zones and redirect target mappings to local data/domains_cache.json.
     Accepts List of ZoneItem instances or dictionaries.
@@ -203,18 +206,26 @@ def save_cached_domains(
     try:
         from datetime import datetime
 
-        # If targets is provided, use it directly. If None, preserve existing targets from cache.
+        # Preserve existing targets & redirect_checks if not passed explicitly
         target_map: Dict[str, str] = {}
-        if targets is not None:
-            target_map = targets
-        elif cache_path.is_file():
+        checks_map: Dict[str, Any] = {}
+
+        if cache_path.is_file():
             try:
                 with open(cache_path, "r", encoding="utf-8") as f:
                     old_data = json.load(f)
-                    if isinstance(old_data, dict) and isinstance(old_data.get("targets"), dict):
-                        target_map = old_data["targets"]
+                    if isinstance(old_data, dict):
+                        if isinstance(old_data.get("targets"), dict):
+                            target_map = old_data["targets"]
+                        if isinstance(old_data.get("redirect_checks"), dict):
+                            checks_map = old_data["redirect_checks"]
             except Exception:
                 pass
+
+        if targets is not None:
+            target_map = targets
+        if redirect_checks is not None:
+            checks_map.update(redirect_checks)
 
         serialized_zones = []
         for z in zones:
@@ -232,6 +243,7 @@ def save_cached_domains(
         payload = {
             "zones": serialized_zones,
             "targets": target_map,
+            "redirect_checks": checks_map,
             "last_updated": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         }
 
@@ -241,6 +253,34 @@ def save_cached_domains(
         return True
     except Exception:
         return False
+
+
+def load_cached_redirect_checks() -> Dict[str, Dict[str, Any]]:
+    """Loads all saved live redirect check results from local cache."""
+    cache = load_cached_domains()
+    return cache.get("redirect_checks", {})
+
+
+def save_cached_redirect_checks(checks: Dict[str, Dict[str, Any]]) -> bool:
+    """Merges and saves live redirect check results into data/domains_cache.json."""
+    cache = load_cached_domains()
+    existing_checks = cache.get("redirect_checks", {})
+    existing_checks.update(checks)
+
+    cache_path = get_domains_cache_path()
+    try:
+        cache["redirect_checks"] = existing_checks
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(cache_path, "w", encoding="utf-8") as f:
+            json.dump(cache, f, indent=4, ensure_ascii=False)
+        return True
+    except Exception:
+        return False
+
+
+def update_cached_redirect_check(domain: str, check_data: Dict[str, Any]) -> bool:
+    """Updates single domain check result in local cache."""
+    return save_cached_redirect_checks({domain.lower(): check_data})
 
 
 def update_cached_target(zone_id: str, target_url: Optional[str]) -> bool:

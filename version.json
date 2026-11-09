@@ -1,7 +1,7 @@
 {
-  "version": "1.3.3",
+  "version": "1.4.0",
   "name": "FlareRedirect",
   "description": "High Performance Cloudflare 301 Redirect Engine",
   "release_date": "2026-11-09",
-  "release_notes": "✨ Versi 1.3.3:\n- Perbaikan Error 403 Saat Buka Aplikasi: Menghilangkan pemanggilan otomatis aturan redirect di latar belakang pada saat startup. Aturan redirect kini hanya dimuat secara on-demand saat pengguna membuka halaman Redirect Manager.\n- Penanganan Domain Antar-Akun Mandiri: Jika sebuah domain di cache lokal milik akun Cloudflare yang belum terhubung, sistem menampilkan pesan panduan yang jelas tanpa memicu request 403 Forbidden ke Cloudflare.\n- Sinkronisasi Multi-Akun Otomatis: Menghubungkan ID sesi aktif ke akun Cloudflare pemilik domain yang sesuai saat aturan redirect dimuat atau dimodifikasi."
+  "release_notes": "✨ Versi 1.4.0:\n- Fitur Live Redirect Inspector: Memeriksa arah pengalihan domain secara langsung ke server (live HTTP/HTTPS) tanpa perlu membaca rules API Cloudflare.\n- Deteksi Rantai Redirect & Alert (>1x Redirect): Mendeteksi jumlah lompatan redirect (hops) secara akurat. Memberikan alert visual mencolok jika terdeteksi pengalihan lebih dari 1x.\n- Deteksi Kode Status Lengkap: Mendeteksi 301 (Permanent), 302 (Temporary), 307, 308, maupun 200 OK (tanpa redirect).\n- Filter List Khusus: Menambahkan filter di tabel domain untuk menyaring 'Multiple Redirect (>1x)', 'Normal (1x)', 'Tanpa Redirect (200 OK)', 'Error', dan 'Belum Diperiksa'.\n- Penyimpanan Hasil Cek Permanen: Seluruh hasil pengecekan disimpan di data/domains_cache.json sehingga startup tetap instan tanpa request berulang.\n- Tombol Manual Cek Live Redirect: Dilengkapi tombol '🔍 Cek Live Redirect' (multi-threaded, cepat, dengan progress bar & tombol batal) serta tombol cek individual (🔍) pada setiap baris domain."
 }
