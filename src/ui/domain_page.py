@@ -49,6 +49,10 @@ class DomainPage(QWidget):
         self.redirect_checks_cache: Dict[str, Dict[str, Any]] = {}
         self.worker: Optional[FetchZonesWorker] = None
         self.check_worker: Optional[CheckLiveRedirectsWorker] = None
+        self.current_page: int = 1
+        self.page_size: int = 50
+        self.total_pages: int = 1
+        self.selected_zone_ids: set = set()
         self._init_ui()
 
     def _init_ui(self):
@@ -86,6 +90,13 @@ class DomainPage(QWidget):
         self.bulk_delete_btn.setStyleSheet("padding: 5px 12px; font-size: 11px; font-weight: 600;")
         self.bulk_delete_btn.clicked.connect(self._delete_selected_redirects)
         header_row.addWidget(self.bulk_delete_btn)
+
+        self.clean_cache_btn = QPushButton("🧹 Bersihkan Cache Sisa")
+        self.clean_cache_btn.setProperty("class", "btn-secondary")
+        self.clean_cache_btn.setStyleSheet("padding: 5px 10px; font-size: 11px;")
+        self.clean_cache_btn.setToolTip("Bersihkan domain sisa dan cache dari akun Cloudflare yang sudah tidak terhubung")
+        self.clean_cache_btn.clicked.connect(self._clean_stale_cache)
+        header_row.addWidget(self.clean_cache_btn)
 
         self.refresh_btn = QPushButton("🔄 Refresh dari CF")
         self.refresh_btn.setProperty("class", "btn-secondary")
@@ -220,6 +231,65 @@ class DomainPage(QWidget):
         self.table.verticalHeader().setDefaultSectionSize(28)
         layout.addWidget(self.table)
 
+        # Pagination Control Bar
+        self.pagination_frame = QFrame()
+        self.pagination_frame.setStyleSheet(
+            "background-color: #0F172A; border: 1px solid #1E293B; border-radius: 8px; padding: 4px 10px;"
+        )
+        pag_layout = QHBoxLayout(self.pagination_frame)
+        pag_layout.setContentsMargins(6, 4, 6, 4)
+        pag_layout.setSpacing(10)
+
+        size_lbl = QLabel("Tampilkan:")
+        size_lbl.setStyleSheet("color: #94A3B8; font-size: 11px; font-weight: 500;")
+        pag_layout.addWidget(size_lbl)
+
+        self.page_size_combo = QComboBox()
+        self.page_size_combo.addItem("50 / hal", 50)
+        self.page_size_combo.addItem("100 / hal", 100)
+        self.page_size_combo.addItem("250 / hal", 250)
+        self.page_size_combo.addItem("Semua", 0)
+        self.page_size_combo.currentIndexChanged.connect(self._on_page_size_changed)
+        pag_layout.addWidget(self.page_size_combo)
+
+        pag_layout.addStretch()
+
+        self.btn_first_page = QPushButton("⏮ Pertama")
+        self.btn_first_page.setProperty("class", "btn-secondary")
+        self.btn_first_page.setStyleSheet("padding: 2px 8px; font-size: 11px;")
+        self.btn_first_page.clicked.connect(self._go_first_page)
+        pag_layout.addWidget(self.btn_first_page)
+
+        self.btn_prev_page = QPushButton("◀ Sebelumnya")
+        self.btn_prev_page.setProperty("class", "btn-secondary")
+        self.btn_prev_page.setStyleSheet("padding: 2px 8px; font-size: 11px;")
+        self.btn_prev_page.clicked.connect(self._go_prev_page)
+        pag_layout.addWidget(self.btn_prev_page)
+
+        self.page_info_lbl = QLabel("Halaman 1 dari 1")
+        self.page_info_lbl.setStyleSheet("color: #F8FAFC; font-weight: 600; font-size: 11px; padding: 0 6px;")
+        pag_layout.addWidget(self.page_info_lbl)
+
+        self.btn_next_page = QPushButton("Berikutnya ▶")
+        self.btn_next_page.setProperty("class", "btn-secondary")
+        self.btn_next_page.setStyleSheet("padding: 2px 8px; font-size: 11px;")
+        self.btn_next_page.clicked.connect(self._go_next_page)
+        pag_layout.addWidget(self.btn_next_page)
+
+        self.btn_last_page = QPushButton("Terakhir ⏭")
+        self.btn_last_page.setProperty("class", "btn-secondary")
+        self.btn_last_page.setStyleSheet("padding: 2px 8px; font-size: 11px;")
+        self.btn_last_page.clicked.connect(self._go_last_page)
+        pag_layout.addWidget(self.btn_last_page)
+
+        pag_layout.addStretch()
+
+        self.range_info_lbl = QLabel("Menampilkan 0 - 0 dari 0 Domain")
+        self.range_info_lbl.setStyleSheet("color: #94A3B8; font-size: 11px;")
+        pag_layout.addWidget(self.range_info_lbl)
+
+        layout.addWidget(self.pagination_frame)
+
     def refresh_account_combo(self):
         self.account_combo.blockSignals(True)
         cur_data = self.account_combo.currentData()
@@ -245,6 +315,9 @@ class DomainPage(QWidget):
         self.refresh_account_combo()
         target_acc_id = self.account_combo.currentData() or "all"
 
+        # Otomatis bersihkan domain yatim (stale) dari akun lama yang sudah diputuskan
+        config_manager.prune_orphan_cached_domains()
+
         # 1. Coba muat dari cache lokal jika tidak dipaksa refresh dari server CF
         if not force_refresh:
             cached_data = config_manager.load_cached_domains()
@@ -266,6 +339,7 @@ class DomainPage(QWidget):
                             matched.append(z)
                     acc.zones = matched
 
+                self.current_page = 1
                 self._filter_table()
                 self.zones_updated.emit(self.all_zones)
                 self.show_toast.emit(f"Memuat {len(self.all_zones)} domain dari penyimpanan lokal.", False)
@@ -288,6 +362,8 @@ class DomainPage(QWidget):
         self.progress_bar.hide()
         self.refresh_btn.setEnabled(True)
         self.all_zones = zones
+        self.selected_zone_ids.clear()
+        self.current_page = 1
         # Simpan ke cache lokal untuk start berikutnya
         config_manager.save_cached_domains(zones, self.zone_targets_cache, redirect_checks=self.redirect_checks_cache)
         self._filter_table()
@@ -301,10 +377,65 @@ class DomainPage(QWidget):
 
     def _toggle_select_all(self, state: int):
         checked = (state == Qt.CheckState.Checked.value or state == 2)
-        for row in range(self.table.rowCount()):
-            chk = self.table.cellWidget(row, 0)
-            if isinstance(chk, QCheckBox):
-                chk.setChecked(checked)
+        if checked:
+            self.selected_zone_ids.update(z.id for z in self.current_filtered_zones)
+        else:
+            self.selected_zone_ids.difference_update(z.id for z in self.current_filtered_zones)
+        self._render_current_page()
+
+    def _on_row_chk_toggled(self, zone_id: str, checked: bool):
+        if checked:
+            self.selected_zone_ids.add(zone_id)
+        else:
+            self.selected_zone_ids.discard(zone_id)
+
+    def get_selected_zones(self) -> List[ZoneItem]:
+        """Returns all selected zones across pages."""
+        if not self.selected_zone_ids:
+            return []
+        return [z for z in self.all_zones if z.id in self.selected_zone_ids]
+
+    def _go_first_page(self):
+        if self.current_page != 1:
+            self.current_page = 1
+            self._render_current_page()
+
+    def _go_prev_page(self):
+        if self.current_page > 1:
+            self.current_page -= 1
+            self._render_current_page()
+
+    def _go_next_page(self):
+        if self.current_page < self.total_pages:
+            self.current_page += 1
+            self._render_current_page()
+
+    def _go_last_page(self):
+        if self.current_page != self.total_pages:
+            self.current_page = self.total_pages
+            self._render_current_page()
+
+    def _on_page_size_changed(self):
+        self.page_size = self.page_size_combo.currentData()
+        self.current_page = 1
+        self._filter_table()
+
+    def _clean_stale_cache(self):
+        reply = QMessageBox.question(
+            self,
+            "Bersihkan Cache Sisa Akun Lama",
+            "Apakah Anda ingin membersihkan seluruh domain dan sisa data dari akun Cloudflare yang sudah tidak terhubung?\n\n"
+            "Domain dari akun yang sudah dihapus/terputus akan dibersihkan dari penyimpanan lokal.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+        if reply == QMessageBox.StandardButton.Yes:
+            removed = config_manager.prune_orphan_cached_domains()
+            self.selected_zone_ids.clear()
+            self.load_domains(force_refresh=False)
+            if removed > 0:
+                self.show_toast.emit(f"Cache dibersihkan: {removed} domain sisa akun lama telah dihapus.", False)
+            else:
+                self.show_toast.emit("Cache lokal sudah bersih. Tidak ada domain sisa dari akun lama.", False)
 
     def _filter_table(self):
         query = self.search_input.text().strip().lower()
@@ -343,22 +474,61 @@ class DomainPage(QWidget):
 
         self.current_filtered_zones = filtered
         self.count_badge.setText(f"{len(filtered)} Domain")
-        self.table.setRowCount(len(filtered))
 
-        if len(filtered) == 0:
+        # Hitung total halaman
+        if self.page_size == 0:
+            self.total_pages = 1
+        else:
+            self.total_pages = max(1, (len(filtered) + self.page_size - 1) // self.page_size)
+
+        self.current_page = max(1, min(self.current_page, self.total_pages))
+        self._render_current_page()
+
+    def _render_current_page(self):
+        total_items = len(self.current_filtered_zones)
+        if total_items == 0:
             self.empty_lbl.show()
             self.table.hide()
+            self.pagination_frame.hide()
+            self.range_info_lbl.setText("Menampilkan 0 - 0 dari 0 Domain")
+            self.page_info_lbl.setText("Halaman 0 dari 0")
             return
+
+        self.empty_lbl.hide()
+        self.table.show()
+        self.pagination_frame.show()
+
+        if self.page_size == 0:
+            start_idx = 0
+            end_idx = total_items
+            page_items = self.current_filtered_zones
         else:
-            self.empty_lbl.hide()
-            self.table.show()
+            start_idx = (self.current_page - 1) * self.page_size
+            end_idx = min(start_idx + self.page_size, total_items)
+            page_items = self.current_filtered_zones[start_idx:end_idx]
+
+        self.page_info_lbl.setText(f"Halaman {self.current_page} dari {self.total_pages}")
+        self.range_info_lbl.setText(f"Menampilkan {start_idx + 1} - {end_idx} dari {total_items} Domain")
+        self.btn_first_page.setEnabled(self.current_page > 1)
+        self.btn_prev_page.setEnabled(self.current_page > 1)
+        self.btn_next_page.setEnabled(self.current_page < self.total_pages)
+        self.btn_last_page.setEnabled(self.current_page < self.total_pages)
+
+        # Batch UI update to eliminate lag
+        self.table.setUpdatesEnabled(False)
+        self.table.setRowCount(len(page_items))
 
         mono_font = QFont("Consolas", 9)
 
-        for row, z in enumerate(filtered):
+        connected_account_labels = {acc.label.lower(): acc for acc in active_session.get_all_accounts()}
+        connected_account_ids = {acc.account_id: acc for acc in active_session.get_all_accounts()}
+
+        for row, z in enumerate(page_items):
             # 0. Checkbox
             chk = QCheckBox()
             chk.setStyleSheet("margin-left: 6px;")
+            chk.setChecked(z.id in self.selected_zone_ids)
+            chk.toggled.connect(lambda checked, zid=z.id: self._on_row_chk_toggled(zid, checked))
             self.table.setCellWidget(row, 0, chk)
 
             # 1. Domain Name
@@ -367,9 +537,19 @@ class DomainPage(QWidget):
             name_item.setForeground(QColor("#F8FAFC"))
             self.table.setItem(row, 1, name_item)
 
-            # 2. Account CF
-            acc_item = QTableWidgetItem(z.account_label)
-            acc_item.setForeground(QColor("#38BDF8"))
+            # 2. Account CF (Highlight if disconnected)
+            is_acc_connected = (
+                (z.account_id and z.account_id in connected_account_ids) or
+                (z.account_label and z.account_label.lower() in connected_account_labels)
+            )
+            if is_acc_connected:
+                acc_item = QTableWidgetItem(z.account_label)
+                acc_item.setForeground(QColor("#38BDF8"))
+                acc_item.setToolTip(f"Akun Cloudflare: {z.account_label} (Terhubung)")
+            else:
+                acc_item = QTableWidgetItem(f"⚠️ {z.account_label} (Terputus)")
+                acc_item.setForeground(QColor("#F59E0B"))
+                acc_item.setToolTip(f"Perhatian: Akun '{z.account_label}' saat ini tidak terhubung.")
             self.table.setItem(row, 2, acc_item)
 
             # 3. Status CF
@@ -461,18 +641,15 @@ class DomainPage(QWidget):
 
             self.table.setCellWidget(row, 5, action_widget)
 
+        self.table.setUpdatesEnabled(True)
+
     def _start_live_redirect_check(self):
         """Starts live redirect checks for selected or all domains currently listed."""
         if self.check_worker and self.check_worker.isRunning():
             self.show_toast.emit("Pengecekan live redirect sedang berjalan.", True)
             return
 
-        selected_zones: List[ZoneItem] = []
-        for row in range(self.table.rowCount()):
-            chk = self.table.cellWidget(row, 0)
-            if isinstance(chk, QCheckBox) and chk.isChecked() and row < len(self.current_filtered_zones):
-                selected_zones.append(self.current_filtered_zones[row])
-
+        selected_zones = self.get_selected_zones()
         if selected_zones:
             target_domains = [z.name for z in selected_zones]
             confirm_msg = f"Mulai pengecekan live redirect untuk {len(target_domains)} domain terpilih?"
@@ -583,6 +760,21 @@ class DomainPage(QWidget):
         worker.start()
 
     def _open_single_redirect(self, zone: ZoneItem):
+        # Guard: check if owning account is connected
+        acc = None
+        if zone.account_id:
+            acc = active_session.get_account(zone.account_id)
+        if not acc and zone.account_label:
+            acc = active_session.get_account_by_label(zone.account_label)
+        if not acc and not active_session.is_connected:
+            QMessageBox.warning(
+                self,
+                "Akun Tidak Terhubung",
+                f"Domain '{zone.name}' terdaftar pada akun '{zone.account_label}', namun akun tersebut saat ini tidak terhubung.\n\n"
+                f"Silakan hubungkan akun '{zone.account_label}' pada menu Kelola Akun untuk mengelola domain ini.",
+            )
+            return
+
         cur_target = self.zone_targets_cache.get(zone.id, "")
         dlg = SingleRedirectDialog(zone, current_target=cur_target, parent=self)
         dlg.redirect_saved.connect(self._on_single_redirect_saved)
@@ -603,12 +795,7 @@ class DomainPage(QWidget):
             self._filter_table()
 
     def _delete_selected_redirects(self):
-        selected_zones: List[ZoneItem] = []
-        for row in range(self.table.rowCount()):
-            chk = self.table.cellWidget(row, 0)
-            if isinstance(chk, QCheckBox) and chk.isChecked() and row < len(self.current_filtered_zones):
-                selected_zones.append(self.current_filtered_zones[row])
-
+        selected_zones = self.get_selected_zones()
         if not selected_zones:
             QMessageBox.warning(
                 self,
@@ -646,6 +833,7 @@ class DomainPage(QWidget):
             for z in self._pending_bulk_deleted_zones:
                 self.zone_targets_cache.pop(z.id, None)
                 config_manager.update_cached_target(z.id, None)
+                self.selected_zone_ids.discard(z.id)
             self._pending_bulk_deleted_zones = []
         self._filter_table()
         self.show_toast.emit(f"Selesai! Total {count} aturan redirect berhasil dihapus.", False)
@@ -657,6 +845,19 @@ class DomainPage(QWidget):
         QMessageBox.critical(self, "Gagal Menghapus Redirect Massal", err_msg)
 
     def _delete_domain_redirects(self, zone: ZoneItem):
+        acc = None
+        if zone.account_id:
+            acc = active_session.get_account(zone.account_id)
+        if not acc and zone.account_label:
+            acc = active_session.get_account_by_label(zone.account_label)
+        if not acc and not active_session.is_connected:
+            QMessageBox.warning(
+                self,
+                "Akun Tidak Terhubung",
+                f"Domain '{zone.name}' terdaftar pada akun '{zone.account_label}', namun akun tersebut saat ini tidak terhubung.",
+            )
+            return
+
         confirm = QMessageBox.question(
             self,
             "Konfirmasi Hapus Redirect",
@@ -665,7 +866,8 @@ class DomainPage(QWidget):
         )
         if confirm == QMessageBox.StandardButton.Yes:
             try:
-                count = delete_matching_redirects_for_domain(zone.id, zone.name, account_id=zone.account_id)
+                target_acc_id = acc.account_id if acc else zone.account_id
+                count = delete_matching_redirects_for_domain(zone.id, zone.name, account_id=target_acc_id)
                 self.zone_targets_cache.pop(zone.id, None)
                 config_manager.update_cached_target(zone.id, None)
                 self._filter_table()
@@ -674,11 +876,8 @@ class DomainPage(QWidget):
                 QMessageBox.critical(self, "Gagal Menghapus", str(exc))
 
     def _open_bulk_dialog(self):
-        selected_ids = []
-        for row in range(self.table.rowCount()):
-            chk = self.table.cellWidget(row, 0)
-            if isinstance(chk, QCheckBox) and chk.isChecked() and row < len(self.current_filtered_zones):
-                selected_ids.append(self.current_filtered_zones[row].id)
+        selected_zones = self.get_selected_zones()
+        selected_ids = [z.id for z in selected_zones]
 
         dlg = BulkRedirectDialog(self.all_zones, preselected_zone_ids=selected_ids, parent=self)
         def _on_bulk_done(count: int):
@@ -692,10 +891,14 @@ class DomainPage(QWidget):
 
     def set_zones(self, zones: List[ZoneItem]):
         self.all_zones = zones
+        self.selected_zone_ids.clear()
+        self.current_page = 1
         self._filter_table()
 
     def clear(self):
         self.all_zones = []
+        self.selected_zone_ids.clear()
+        self.current_page = 1
         self.zone_targets_cache.clear()
         self.table.setRowCount(0)
         self.empty_lbl.hide()

@@ -125,7 +125,10 @@ def delete_profile(name: str) -> bool:
         if cfg.get("current_profile", "").lower() == target_key.lower():
             cfg["current_profile"] = next(iter(profiles.keys()), "")
 
-        return save_config(cfg)
+        saved = save_config(cfg)
+        if saved:
+            prune_orphan_cached_domains(list(profiles.keys()))
+        return saved
     return False
 
 
@@ -149,11 +152,13 @@ def set_current_profile(name: str) -> bool:
 
 
 def clear_all_profiles() -> bool:
-    """Removes all profiles from config.json."""
+    """Removes all profiles from config.json and clears local domain caches."""
     cfg = load_config()
     cfg["api_profiles"] = {}
     cfg["current_profile"] = ""
-    return save_config(cfg)
+    saved = save_config(cfg)
+    clear_cached_domains()
+    return saved
 
 
 def get_data_dir() -> Path:
@@ -303,4 +308,76 @@ def clear_cached_domains() -> bool:
         return True
     except Exception:
         return False
+
+
+def prune_orphan_cached_domains(valid_account_labels: Optional[List[str]] = None) -> int:
+    """Removes cached domains, targets, and redirect checks belonging to accounts
+    that are no longer in the valid accounts list (e.g. deleted or stale profiles).
+    Returns the number of orphan domains removed.
+    """
+    if valid_account_labels is None:
+        cfg = load_config()
+        valid_account_labels = list(cfg.get("api_profiles", {}).keys())
+
+    cache_path = get_domains_cache_path()
+    if not cache_path.is_file():
+        return 0
+
+    try:
+        with open(cache_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+            if not isinstance(data, dict):
+                return 0
+
+        zones = data.get("zones", [])
+        if not isinstance(zones, list):
+            return 0
+
+        valid_set = {str(lbl).strip().lower() for lbl in valid_account_labels if lbl}
+        # If there are no valid profiles connected at all, don't prune automatically
+        if not valid_set:
+            return 0
+
+        kept_zones = []
+        removed_count = 0
+        kept_zone_ids = set()
+        kept_zone_names = set()
+
+        for z in zones:
+            acc_lbl = str(z.get("account_label", "")).strip().lower()
+            if acc_lbl in valid_set:
+                kept_zones.append(z)
+                zid = z.get("id")
+                if zid:
+                    kept_zone_ids.add(zid)
+                zname = z.get("name")
+                if zname:
+                    kept_zone_names.add(zname.lower())
+            else:
+                removed_count += 1
+
+        if removed_count > 0:
+            targets = data.get("targets", {})
+            if isinstance(targets, dict):
+                targets = {k: v for k, v in targets.items() if k in kept_zone_ids}
+            else:
+                targets = {}
+
+            checks = data.get("redirect_checks", {})
+            if isinstance(checks, dict):
+                checks = {k: v for k, v in checks.items() if k.lower() in kept_zone_names}
+            else:
+                checks = {}
+
+            data["zones"] = kept_zones
+            data["targets"] = targets
+            data["redirect_checks"] = checks
+
+            with open(cache_path, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=4, ensure_ascii=False)
+
+        return removed_count
+    except Exception:
+        return 0
+
 

@@ -301,6 +301,9 @@ class MainWindow(QMainWindow):
         profiles = cfg.get("api_profiles", {})
         curr_prof = cfg.get("current_profile", "")
 
+        # Auto-prune orphan cached domains from deleted/stale accounts
+        config_manager.prune_orphan_cached_domains(list(profiles.keys()))
+
         loaded_count = 0
         for name, prof in profiles.items():
             if not isinstance(prof, dict):

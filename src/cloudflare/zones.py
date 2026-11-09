@@ -155,13 +155,15 @@ def find_zone_across_accounts(
                 all_cached.append(z)
 
     match = find_matching_zone(clean, all_cached)
-    if match and match.account_id:
-        acc_label = match.account_label
+    if match:
+        # Check if matching zone belongs to an active connected account
         for acc in accounts:
-            if acc.account_id == match.account_id:
-                acc_label = acc.label
-                break
-        return match.account_id, acc_label, match, None
+            if (match.account_id and acc.account_id == match.account_id) or (
+                match.account_label and acc.label.lower() == match.account_label.lower()
+            ):
+                match.account_id = acc.account_id
+                match.account_label = acc.label
+                return acc.account_id, acc.label, match, None
 
     # 2. Live API search across all connected accounts
     parts = clean.split(".")
@@ -184,6 +186,9 @@ def find_zone_across_accounts(
                     return acc.account_id, acc.label, found_zone, None
             except Exception:
                 continue
+
+    if match and match.account_label:
+        return None, match.account_label, match, f"Domain '{clean}' tercatat pada akun '{match.account_label}' yang saat ini tidak terhubung."
 
     return None, None, None, f"Domain '{clean}' tidak ditemukan pada akun Cloudflare manapun."
 

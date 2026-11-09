@@ -208,9 +208,22 @@ class MultiAccountSessionManager:
 
     def get_auth_headers_for(self, account_id: Optional[str] = None) -> Dict[str, str]:
         """Gets authentication headers dictionary for the specified or active account."""
-        target_id = account_id or self._active_id
-        if target_id and target_id in self._accounts:
-            return self._accounts[target_id].get_auth_headers()
+        if account_id:
+            # Check by account_id
+            if account_id in self._accounts:
+                return self._accounts[account_id].get_auth_headers()
+            # Check by account label
+            for acc in self._accounts.values():
+                if acc.label.lower() == account_id.lower():
+                    return acc.get_auth_headers()
+            # Explicit account requested but not found/connected
+            from src.utils.errors import AuthenticationError
+            raise AuthenticationError(f"Akun Cloudflare '{account_id}' tidak terhubung dalam sesi aktif.")
+
+        # Default fallback to active account
+        if self._active_id and self._active_id in self._accounts:
+            return self._accounts[self._active_id].get_auth_headers()
+
         token = self.get_token()
         if token:
             return {"Authorization": f"Bearer {token}"}

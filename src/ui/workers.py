@@ -398,6 +398,7 @@ class BulkCreateRedirectsWorker(QThread):
             for idx, item in enumerate(self.items, start=1):
                 zone_id = item["zone_id"]
                 account_id = item.get("account_id")
+                acc_label = item.get("account_label")
                 source = item["source_hostname"]
                 dest = item["destination_url"]
                 cov = item.get("coverage", "both")
@@ -405,6 +406,26 @@ class BulkCreateRedirectsWorker(QThread):
                 enabled = item.get("enabled", True)
 
                 self.progress.emit(idx, total, f"Memproses: {source}")
+
+                # Safeguard: verify owning account is connected
+                if account_id:
+                    matched_acc = active_session.get_account(account_id)
+                    if not matched_acc and acc_label:
+                        matched_acc = active_session.get_account_by_label(acc_label)
+                    if not matched_acc:
+                        # Zone belongs to disconnected/stale account
+                        failed_count += 1
+                        lbl = acc_label or account_id
+                        errors.append(f"{source}: Akun Cloudflare '{lbl}' tidak terhubung dalam sesi.")
+                        continue
+                    account_id = matched_acc.account_id
+                elif acc_label:
+                    matched_acc = active_session.get_account_by_label(acc_label)
+                    if not matched_acc:
+                        failed_count += 1
+                        errors.append(f"{source}: Akun Cloudflare '{acc_label}' tidak terhubung dalam sesi.")
+                        continue
+                    account_id = matched_acc.account_id
 
                 try:
                     create_redirect_rule(

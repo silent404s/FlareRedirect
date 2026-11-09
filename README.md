@@ -1,9 +1,9 @@
-# ⚡ FlareRedirect (v1.4.0)
+# ⚡ FlareRedirect (v1.4.1)
 > **High Performance Cloudflare 301 Permanent Redirect Engine**  
 > Kelola ratusan aturan *Single Redirects (301 Permanent URL Forwarding)* di Cloudflare secara instan, aman, dan tanpa perantara pihak ketiga.
 
 [![Platform](https://img.shields.io/badge/Platform-Windows%2010%20%7C%2011%20(64--bit)-blue.svg)](#)
-[![Version](https://img.shields.io/badge/Version-v1.4.0-orange.svg)](#)
+[![Version](https://img.shields.io/badge/Version-v1.4.1-orange.svg)](#)
 [![Python](https://img.shields.io/badge/Python-3.12%20%7C%203.14-green.svg)](#)
 [![GUI](https://img.shields.io/badge/GUI-PySide6%20Qt-blueviolet.svg)](#)
 [![License](https://img.shields.io/badge/License-MIT-brightgreen.svg)](#)
@@ -16,11 +16,11 @@
 1. **Unduh / Buka Executable Berlabel Versi:**
    - Gunakan file versi terbaru di folder `dist/`:
      ```text
-     dist\FlareRedirect_v1.4.0.exe
+     dist\FlareRedirect_v1.4.1.exe
      ```
    - *(Setiap versi rilis selalu memiliki penamaan tag versi yang jelas)*.
 2. **Jalankan Aplikasi:**
-   - Klik dua kali pada `FlareRedirect_v1.4.0.exe`.
+   - Klik dua kali pada `FlareRedirect_v1.4.1.exe`.
    - *(Jika muncul Windows SmartScreen, klik **More info** &rarr; **Run anyway**)*.
 3. **Hubungkan Akun Cloudflare:**
    - Masuk ke menu **🔑 Kelola Akun** di pojok kanan atas.
@@ -28,7 +28,8 @@
    - Pastikan opsi **"💾 Simpan ke config.json"** dicentang agar akun otomatis terhubung setiap kali aplikasi dibuka.
 4. **Mulai Redirect Domain:**
    - Masuk ke menu **🌐 Domains** untuk melihat seluruh domain Anda.
-   - **Local Cache Instant Startup:** Domain otomatis disimpan di penyimpanan lokal sehingga saat aplikasi dibuka kembali, domain langsung muncul tanpa menunggu koneksi Cloudflare! Gunakan tombol **"🔄 Refresh dari CF"** jika ingin menyinkronkan data terbaru.
+   - **Local Cache & High-Speed Pagination:** Domain tersimpan rapi dan ditampilkan dengan sistem paginasi responsif (bebas lag/freeze untuk ribuan domain).
+   - **Pembersihan Cache Sisa:** Tombol **"🧹 Bersihkan Cache Sisa"** otomatis menghapus domain yatim dari akun lama yang sudah diputuskan.
    - Gunakan tombol **⚡ Bulk Redirect** untuk mengalihkan puluhan/ratusan domain sekaligus secara otomatis lintas akun!
 
 ---

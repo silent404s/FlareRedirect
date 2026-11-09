@@ -271,5 +271,44 @@ def test_domain_page_live_redirect_filter_and_alert(qapp):
     assert "○" in page.table.item(0, 4).text()
 
 
+def test_domain_page_pagination(qapp):
+    from src.ui.domain_page import DomainPage
+    from src.cloudflare.zones import ZoneItem
+
+    page = DomainPage()
+    # Create 120 dummy zones
+    zones = [ZoneItem({"id": f"z_{i}", "name": f"domain{i}.com", "status": "active"}, account_label="NAGA") for i in range(120)]
+    page.set_zones(zones)
+
+    # Default page size is 50
+    assert page.page_size == 50
+    assert page.total_pages == 3
+    assert page.current_page == 1
+    assert page.table.rowCount() == 50
+
+    # Go to next page (page 2)
+    page._go_next_page()
+    assert page.current_page == 2
+    assert page.table.rowCount() == 50
+
+    # Go to last page (page 3)
+    page._go_last_page()
+    assert page.current_page == 3
+    assert page.table.rowCount() == 20
+
+    # Go to first page
+    page._go_first_page()
+    assert page.current_page == 1
+    assert page.table.rowCount() == 50
+
+    # Test selection across pages
+    page._on_row_chk_toggled("z_0", True)
+    page._go_next_page()
+    page._on_row_chk_toggled("z_55", True)
+    selected = page.get_selected_zones()
+    assert len(selected) == 2
+    assert {z.id for z in selected} == {"z_0", "z_55"}
+
+
 
 

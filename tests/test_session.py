@@ -155,3 +155,19 @@ def test_multi_account_save_and_rehydrate_five_accounts(tmp_path, monkeypatch):
     assert loaded_labels == set(labels)
 
 
+def test_get_auth_headers_for_disconnected_account():
+    from src.utils.errors import AuthenticationError
+
+    manager = MultiAccountSessionManager()
+    manager.add_account("Active Acc", "token_active")
+
+    # Asking for a connected account works
+    headers = manager.get_auth_headers_for("Active Acc")
+    assert headers["Authorization"] == "Bearer token_active"
+
+    # Asking for a disconnected account raises AuthenticationError instead of using active token
+    with pytest.raises(AuthenticationError) as exc_info:
+        manager.get_auth_headers_for("NonExistentAccount")
+    assert "tidak terhubung" in str(exc_info.value)
+
+

@@ -8,7 +8,7 @@ from src.config import Settings
 def test_settings_defaults():
     s = Settings()
     assert s.APP_NAME == "FlareRedirect"
-    assert s.APP_VERSION == "1.4.0"
+    assert s.APP_VERSION == "1.4.1"
     assert s.APP_ENV in ("production", "development", "testing")
     assert s.CLOUDFLARE_API_BASE_URL == "https://api.cloudflare.com/client/v4"
     assert s.TIMEOUT_CONNECT == 10.0
@@ -155,6 +155,35 @@ def test_cached_redirect_checks_persistence(tmp_path, monkeypatch):
     updated = cm.load_cached_redirect_checks()
     assert len(updated) == 3
     assert "domain3.com" in updated
+
+
+def test_prune_orphan_cached_domains(tmp_path, monkeypatch):
+    import src.config_manager as cm
+
+    fake_cache = tmp_path / "data" / "domains_cache.json"
+    monkeypatch.setattr(cm, "get_domains_cache_path", lambda: fake_cache)
+    monkeypatch.setattr(cm, "get_data_dir", lambda: tmp_path / "data")
+
+    zones = [
+        {"id": "z1", "name": "keep1.com", "account_label": "Aktif 1"},
+        {"id": "z2", "name": "keep2.com", "account_label": "Aktif 2"},
+        {"id": "z3", "name": "orphan.com", "account_label": "OldDeletedAccount"},
+    ]
+    targets = {"z1": "https://dest1.com", "z3": "https://dest3.com"}
+    checks = {"keep1.com": {"hops": 1}, "orphan.com": {"hops": 2}}
+
+    cm.save_cached_domains(zones, targets=targets, redirect_checks=checks)
+
+    # Prune orphan accounts, keeping only Aktif 1 and Aktif 2
+    pruned = cm.prune_orphan_cached_domains(valid_account_labels=["Aktif 1", "Aktif 2"])
+    assert pruned == 1
+
+    loaded = cm.load_cached_domains()
+    assert len(loaded["zones"]) == 2
+    assert {z["name"] for z in loaded["zones"]} == {"keep1.com", "keep2.com"}
+    assert "z3" not in loaded["targets"]
+    assert "orphan.com" not in loaded["redirect_checks"]
+    assert "keep1.com" in loaded["redirect_checks"]
 
 
 
