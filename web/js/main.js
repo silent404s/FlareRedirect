@@ -1045,3 +1045,4 @@ function showToast(message, isError = false) {
     setTimeout(() => toast.remove(), 200);
   }, 4000);
 }
+

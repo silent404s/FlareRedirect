@@ -9,3 +9,4 @@ if errorlevel 1 (
     python web/server.py
 )
 pause
+
