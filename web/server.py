@@ -90,6 +90,13 @@ class FlareWebHandler(SimpleHTTPRequestHandler):
         web_dir = Path(__file__).resolve().parent
         super().__init__(*args, directory=str(web_dir), **kwargs)
 
+    def end_headers(self):
+        # Force browser to never cache local assets (avoids stale JS/CSS)
+        self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
+        self.send_header("Pragma", "no-cache")
+        self.send_header("Expires", "0")
+        super().end_headers()
+
     def log_message(self, format, *args):
         # Suppress noisy standard request logging
         pass
@@ -356,13 +363,31 @@ class FlareWebHandler(SimpleHTTPRequestHandler):
             except Exception as exc:
                 self._send_json(500, {"error": str(exc)})
 
+        elif path == "/api/system/restart":
+            self._send_json(200, {"success": True, "message": "Server sedang memuat ulang..."})
+            def _delayed_restart():
+                time.sleep(0.5)
+                try:
+                    os.execv(sys.executable, [sys.executable] + sys.argv)
+                except Exception as ex:
+                    print(f"[RESTART ERROR] {ex}")
+            threading.Thread(target=_delayed_restart, daemon=True).start()
+
         elif path == "/api/redirect/trace-single":
             domain = body.get("domain", "").strip()
             if not domain:
                 self._send_json(400, {"error": "Domain tidak boleh kosong"})
                 return
 
-            res = check_live_redirect(domain)
+            try:
+                import importlib
+                if "src.security.validation" in sys.modules:
+                    importlib.reload(sys.modules["src.security.validation"])
+                from src.security.validation import check_live_redirect as fresh_check
+                res = fresh_check(domain)
+            except Exception:
+                res = check_live_redirect(domain)
+
             config_manager.update_cached_redirect_check(domain, res)
             self._send_json(200, res)
 
@@ -387,8 +412,16 @@ class FlareWebHandler(SimpleHTTPRequestHandler):
             def run_scan(tid: str, doms: list):
                 results = {}
                 try:
+                    import importlib
+                    if "src.security.validation" in sys.modules:
+                        importlib.reload(sys.modules["src.security.validation"])
+                    from src.security.validation import check_live_redirect as worker_check
+                except Exception:
+                    worker_check = check_live_redirect
+
+                try:
                     with ThreadPoolExecutor(max_workers=15) as executor:
-                        future_to_dom = {executor.submit(check_live_redirect, d): d for d in doms}
+                        future_to_dom = {executor.submit(worker_check, d): d for d in doms}
                         idx = 0
                         for future in as_completed(future_to_dom):
                             d = future_to_dom[future]
