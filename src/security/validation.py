@@ -11,11 +11,13 @@ Ensures:
 """
 
 import re
+import json
+import urllib.request
 from urllib.parse import urlsplit, urljoin
 from datetime import datetime
 import idna
 import socket
-from typing import Tuple, Optional, Dict, Any
+from typing import Tuple, Optional, Dict, Any, List
 import httpx
 from src.utils.errors import ValidationError
 
@@ -363,26 +365,173 @@ def is_cloudflare_ip(ip: str) -> bool:
     return any(ip.startswith(p) for p in cf_prefixes)
 
 
+def is_same_site_canonical(from_url: str, to_url: str) -> bool:
+    """Checks if a redirect is merely an apex <-> www or http <-> https canonical
+    redirection for the same root domain without path alterations.
+    E.g.:
+        http://a.com -> https://www.a.com/
+        http://www.a.com -> https://a.com/
+        http://a.com -> https://a.com/
+    Such redirects are not considered external 301 redirects and are treated as 200 OK.
+    """
+    from_p = urlsplit(from_url)
+    to_p = urlsplit(to_url)
+
+    h1 = (from_p.netloc or "").lower().split(":")[0].strip()
+    h2 = (to_p.netloc or "").lower().split(":")[0].strip()
+
+    if not h1 or not h2:
+        return False
+
+    is_host_same = (h1 == h2 or h1 == f"www.{h2}" or h2 == f"www.{h1}")
+    if not is_host_same:
+        return False
+
+    p1 = from_p.path.rstrip("/")
+    p2 = to_p.path.rstrip("/")
+    return p1 == p2
+
+
+def resolve_doh_ips(domain: str, timeout: float = 3.0) -> List[str]:
+    """Resolves authentic IPv4 addresses for a domain using encrypted DNS-over-HTTPS (DoH).
+    Bypasses local ISP DNS poisoning, Nawala, and Internet Positif in Indonesia.
+    """
+    clean_host = clean_domain_input(domain).split("/")[0].split(":")[0].strip()
+    doh_endpoints = [
+        f"https://cloudflare-dns.com/dns-query?name={clean_host}&type=A",
+        f"https://dns.google/resolve?name={clean_host}&type=A",
+    ]
+    for url in doh_endpoints:
+        try:
+            req = urllib.request.Request(
+                url,
+                headers={"Accept": "application/dns-json", "User-Agent": "FlareRedirect-DoH/1.4"}
+            )
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                if resp.status == 200:
+                    data = json.loads(resp.read().decode("utf-8"))
+                    answers = data.get("Answer", [])
+                    ips = [ans["data"] for ans in answers if ans.get("type") == 1 and ans.get("data")]
+                    if ips:
+                        return ips
+        except Exception:
+            continue
+    return []
+
+
+def trace_doh_chain(domain: str, timeout: float = 4.0) -> Optional[Dict[str, Any]]:
+    """Traces redirect chain using direct Anycast connections resolved via DoH.
+    Bypasses local ISP blocking / Nawala.
+    """
+    clean_host = domain.strip().lower()
+    ips = resolve_doh_ips(clean_host, timeout=timeout)
+    if not ips:
+        return None
+
+    curr_url = f"http://{clean_host}"
+    visited = set()
+    external_hops = []
+    initial_status = None
+    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    while len(external_hops) < 6:
+        canonical_key = curr_url.rstrip("/")
+        if canonical_key in visited:
+            break
+        visited.add(canonical_key)
+
+        parsed = urlsplit(curr_url)
+        host = (parsed.netloc or "").lower().split(":")[0].strip()
+        req_proto = parsed.scheme or "http"
+        req_path = parsed.path or "/"
+        if parsed.query:
+            req_path += "?" + parsed.query
+
+        step_ips = ips if host == clean_host else resolve_doh_ips(host, timeout=timeout)
+        status_code, loc = None, None
+
+        if not step_ips:
+            try:
+                with httpx.Client(timeout=timeout, verify=False, follow_redirects=False) as c:
+                    r = c.get(curr_url)
+                    status_code, loc = r.status_code, r.headers.get("Location")
+            except Exception:
+                break
+        else:
+            schemes = [req_proto, "https" if req_proto == "http" else "http"]
+            for proto in schemes:
+                for ip in step_ips:
+                    try:
+                        with httpx.Client(timeout=timeout, verify=False, follow_redirects=False) as c:
+                            ext = {"sni_hostname": host} if proto == "https" else {}
+                            r = c.get(
+                                f"{proto}://{ip}{req_path}",
+                                headers={"Host": host, "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) FlareRedirect/1.4"},
+                                extensions=ext,
+                            )
+                            status_code, loc = r.status_code, r.headers.get("Location")
+                            break
+                    except Exception:
+                        continue
+                if status_code:
+                    break
+
+        if not status_code:
+            break
+
+        if status_code in (301, 302, 303, 307, 308) and loc:
+            next_url = urljoin(curr_url, loc)
+            if is_same_site_canonical(curr_url, next_url):
+                curr_url = next_url
+                continue
+            if initial_status is None:
+                initial_status = status_code
+            external_hops.append({"status_code": status_code, "from_url": curr_url, "target_url": next_url})
+            curr_url = next_url
+        else:
+            if initial_status is None:
+                initial_status = status_code
+            break
+
+    hops_count = len(external_hops)
+    if hops_count > 0:
+        return {
+            "domain": clean_host,
+            "status_code": initial_status,
+            "target_url": external_hops[-1]["target_url"] if hops_count > 1 else external_hops[0]["target_url"],
+            "final_url": curr_url,
+            "hops": hops_count,
+            "is_multiple": hops_count > 1,
+            "has_redirect": True,
+            "chain": [h["target_url"] for h in external_hops],
+            "checked_at": now_str,
+            "bypassed_nawala": True,
+            "error": None,
+        }
+    elif initial_status:
+        return {
+            "domain": clean_host,
+            "status_code": 200,
+            "target_url": "",
+            "final_url": curr_url,
+            "hops": 0,
+            "is_multiple": False,
+            "has_redirect": False,
+            "chain": [],
+            "checked_at": now_str,
+            "bypassed_nawala": True,
+            "error": None,
+        }
+    return None
+
+
 def check_live_redirect(domain: str, timeout: float = 6.0) -> Dict[str, Any]:
     """Inspects live HTTP/HTTPS redirect behavior for a domain directly over the network.
-    Traces the entire redirect chain, counts hops, detects status codes (301, 302, etc.),
-    and identifies multiple redirects (> 1 hop) or redirect loops.
-
-    Returns:
-        dict: {
-            "domain": str,
-            "status_code": Optional[int],  # 301, 302, 200, etc.
-            "target_url": str,             # Destination URL (empty if 200 OK / no redirect)
-            "final_url": str,              # Final landing URL
-            "hops": int,                   # Count of redirects
-            "is_multiple": bool,           # True if hops > 1 (Alert condition)
-            "has_redirect": bool,          # True if hops >= 1
-            "chain": List[str],            # Traced URL hops
-            "checked_at": str,             # Timestamp YYYY-MM-DD HH:MM:SS
-            "error": Optional[str],        # Error message if unreachable
-        }
+    Traces the entire redirect chain, counts external redirects, detects status codes (301, 302, etc.),
+    bypasses Nawala / Internet Positif ISP blocking via encrypted DoH (DNS-over-HTTPS),
+    and treats canonical apex <-> www redirects as 200 OK (no redirect).
     """
-    clean_host = clean_domain_input(domain)
+    clean_host = clean_domain_input(domain).strip().lower()
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
     protocols = ["https", "http"]
@@ -395,27 +544,24 @@ def check_live_redirect(domain: str, timeout: float = 6.0) -> Dict[str, Any]:
                 follow_redirects=True,
                 timeout=timeout,
                 verify=False,
-                headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) FlareRedirect-LiveCheck/1.3"},
+                headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) FlareRedirect-LiveCheck/1.4"},
             ) as client:
                 resp = client.get(start_url)
-                history = resp.history
+                body_lower = (getattr(resp, "text", "") or "").lower()
+                is_nawala = any(kw in body_lower for kw in ["internet-positif", "trustpositif", "uzone.id", "blokir.telkom", "mercusuar"])
+                if is_nawala:
+                    doh_res = trace_doh_chain(clean_host, timeout=timeout)
+                    if doh_res:
+                        return doh_res
 
+                history = resp.history
                 actual_hops = []
                 for h in history:
                     loc = h.headers.get("Location", "")
                     from_u = str(h.url)
                     to_u = urljoin(from_u, loc)
 
-                    from_p = urlsplit(from_u)
-                    to_p = urlsplit(to_u)
-
-                    # Ignore same-host http->https protocol upgrade
-                    if (
-                        from_p.scheme == "http"
-                        and to_p.scheme == "https"
-                        and from_p.netloc.lower() == to_p.netloc.lower()
-                        and from_p.path == to_p.path
-                    ):
+                    if is_same_site_canonical(from_u, to_u):
                         continue
 
                     actual_hops.append({
@@ -430,13 +576,9 @@ def check_live_redirect(domain: str, timeout: float = 6.0) -> Dict[str, Any]:
                 if hops_count > 0:
                     primary_target = actual_hops[-1]["target_url"] if hops_count > 1 else actual_hops[0]["target_url"]
                     initial_status = actual_hops[0]["status_code"]
-                elif len(history) > 0:
-                    primary_target = ""
-                    initial_status = resp.status_code
-                    hops_count = 0
                 else:
                     primary_target = ""
-                    initial_status = resp.status_code
+                    initial_status = 200
                     hops_count = 0
 
                 return {
@@ -449,6 +591,7 @@ def check_live_redirect(domain: str, timeout: float = 6.0) -> Dict[str, Any]:
                     "has_redirect": hops_count > 0,
                     "chain": [h["target_url"] for h in actual_hops],
                     "checked_at": now_str,
+                    "bypassed_nawala": False,
                     "error": None,
                 }
         except httpx.TooManyRedirects:
@@ -462,11 +605,19 @@ def check_live_redirect(domain: str, timeout: float = 6.0) -> Dict[str, Any]:
                 "has_redirect": True,
                 "chain": [],
                 "checked_at": now_str,
+                "bypassed_nawala": False,
                 "error": "Redirect Loop (> 10x)",
             }
         except Exception as exc:
             last_error = str(exc)
+            doh_res = trace_doh_chain(clean_host, timeout=timeout)
+            if doh_res:
+                return doh_res
             continue
+
+    doh_res = trace_doh_chain(clean_host, timeout=timeout)
+    if doh_res:
+        return doh_res
 
     err_str = "Koneksi Gagal / Timeout"
     if last_error:
@@ -485,6 +636,7 @@ def check_live_redirect(domain: str, timeout: float = 6.0) -> Dict[str, Any]:
         "has_redirect": False,
         "chain": [],
         "checked_at": now_str,
+        "bypassed_nawala": False,
         "error": err_str,
     }
 

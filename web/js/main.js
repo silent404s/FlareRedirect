@@ -400,17 +400,18 @@ function renderCurrentPage() {
       const code = chkData.status_code || '';
       const isMult = chkData.is_multiple || hops > 1;
 
+      const nawalaBadge = chkData.bypassed_nawala ? ' <span title="Bypass Nawala/Internet Positif via DoH">🛡️</span>' : '';
       if (isMult) {
         const pill = document.createElement('span');
         pill.className = 'pill pill-warning';
-        pill.textContent = `⚠️ [${code} • ${hops}x] ${target}`;
-        pill.title = `PERINGATAN: Terdeteksi ${hops}x Pengalihan! Rantai: ${chkData.chain ? chkData.chain.join(' → ') : target}`;
+        pill.innerHTML = `⚠️ [${code} • ${hops}x] ${target}${nawalaBadge}`;
+        pill.title = `PERINGATAN: Terdeteksi ${hops}x Pengalihan! Rantai: ${chkData.chain ? chkData.chain.join(' → ') : target}${chkData.bypassed_nawala ? ' (Bypass Nawala/ISP)' : ''}`;
         tdTarget.appendChild(pill);
       } else if (hops === 1) {
         const pill = document.createElement('span');
         pill.className = 'pill pill-success';
-        pill.textContent = `✅ [${code || 301}] ${target}`;
-        pill.title = `Normal 1x Redirect: ${target}`;
+        pill.innerHTML = `✅ [${code || 301}] ${target}${nawalaBadge}`;
+        pill.title = `Normal 1x Redirect: ${target}${chkData.bypassed_nawala ? ' (Bypass Nawala/ISP)' : ''}`;
         tdTarget.appendChild(pill);
       } else if (chkData.error) {
         const pill = document.createElement('span');
@@ -420,7 +421,7 @@ function renderCurrentPage() {
       } else {
         const pill = document.createElement('span');
         pill.className = 'pill pill-neutral';
-        pill.textContent = `○ ${code || 200} OK (Tanpa Redirect)`;
+        pill.innerHTML = `○ ${code || 200} OK (Tanpa Redirect)${nawalaBadge}`;
         tdTarget.appendChild(pill);
       }
     } else {
@@ -497,18 +498,19 @@ async function executeQuickTrace() {
     const data = await res.json();
     redirectChecksMap[raw.toLowerCase()] = data;
 
+    const nwBadge = data.bypassed_nawala ? ' (Bypass Nawala 🛡️)' : '';
     if (data.is_multiple || data.hops > 1) {
-      DOM.quickTraceOutput.innerHTML = `<span class="pill pill-warning">⚠️ [${data.status_code || 301} • ${data.hops}x] ${data.target_url}</span>`;
-      showToast(`⚠️ Domain '${raw}' terdeteksi ${data.hops}x Redirects!`, true);
+      DOM.quickTraceOutput.innerHTML = `<span class="pill pill-warning">⚠️ [${data.status_code || 301} • ${data.hops}x] ${data.target_url}${data.bypassed_nawala ? ' 🛡️' : ''}</span>`;
+      showToast(`⚠️ Domain '${raw}' terdeteksi ${data.hops}x Redirects!${nwBadge}`, true);
     } else if (data.hops === 1) {
-      DOM.quickTraceOutput.innerHTML = `<span class="pill pill-success">✅ [${data.status_code || 301}] ${data.target_url}</span>`;
-      showToast(`✅ Domain '${raw}' normal 1x redirect ke ${data.target_url}`);
+      DOM.quickTraceOutput.innerHTML = `<span class="pill pill-success">✅ [${data.status_code || 301}] ${data.target_url}${data.bypassed_nawala ? ' 🛡️' : ''}</span>`;
+      showToast(`✅ Domain '${raw}' normal 1x redirect ke ${data.target_url}${nwBadge}`);
     } else if (data.error) {
       DOM.quickTraceOutput.innerHTML = `<span class="pill pill-danger">✕ Error: ${data.error}</span>`;
       showToast(`Gagal memeriksa '${raw}': ${data.error}`, true);
     } else {
-      DOM.quickTraceOutput.innerHTML = `<span class="pill pill-neutral">○ 200 OK (Tanpa Redirect)</span>`;
-      showToast(`○ Domain '${raw}' aktif tanpa redirect.`);
+      DOM.quickTraceOutput.innerHTML = `<span class="pill pill-neutral">○ 200 OK (Tanpa Redirect)${data.bypassed_nawala ? ' 🛡️' : ''}</span>`;
+      showToast(`○ Domain '${raw}' aktif tanpa redirect.${nwBadge}`);
     }
 
     updateKpis();

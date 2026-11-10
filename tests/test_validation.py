@@ -225,3 +225,76 @@ def test_check_live_redirect_no_redirect(monkeypatch):
     assert res["status_code"] == 200
     assert res["target_url"] == ""
 
+
+def test_check_live_redirect_apex_to_www_is_200_ok(monkeypatch):
+    """Verifies that apex to www (or www to apex) redirect is treated as 200 OK (no external redirect)."""
+    import httpx
+    from src.security.validation import check_live_redirect
+
+    class MockResponse:
+        def __init__(self, url, status_code, history=None):
+            self.url = httpx.URL(url)
+            self.status_code = status_code
+            self.history = history or []
+
+    class MockHistoryItem:
+        def __init__(self, url, status_code, location):
+            self.url = httpx.URL(url)
+            self.status_code = status_code
+            self.headers = {"Location": location}
+
+    def fake_get(url, *args, **kwargs):
+        # http://mybrand.com -> https://www.mybrand.com/ (canonical apex to www)
+        hist = [MockHistoryItem("http://mybrand.com", 301, "https://www.mybrand.com/")]
+        return MockResponse("https://www.mybrand.com/", 200, history=hist)
+
+    monkeypatch.setattr("httpx.Client.get", fake_get)
+
+    res = check_live_redirect("mybrand.com")
+    assert res["domain"] == "mybrand.com"
+    assert res["status_code"] == 200
+    assert res["target_url"] == ""
+    assert res["hops"] == 0
+    assert res["has_redirect"] is False
+    assert res["is_multiple"] is False
+
+
+def test_check_live_redirect_nawala_bypass(monkeypatch):
+    """Verifies that when ISP intercepts or drops connection, DoH fallback resolves real redirect."""
+    import httpx
+    from src.security.validation import check_live_redirect
+
+    # Simulate standard connection failing with ConnectTimeout (typical Nawala behavior)
+    def fake_get_fail(*args, **kwargs):
+        raise httpx.ConnectTimeout("Connection timed out (Nawala block)")
+
+    monkeypatch.setattr("httpx.Client.get", fake_get_fail)
+
+    # Mock DoH resolver returning Cloudflare IP
+    monkeypatch.setattr("src.security.validation.resolve_doh_ips", lambda d, timeout=3.0: ["104.21.1.1"])
+
+    # Mock trace_doh_chain finding 301 redirect
+    def fake_doh_chain(domain, timeout=4.0):
+        return {
+            "domain": domain,
+            "status_code": 301,
+            "target_url": "https://realdestination.com/target",
+            "final_url": "https://realdestination.com/target",
+            "hops": 1,
+            "is_multiple": False,
+            "has_redirect": True,
+            "chain": ["https://realdestination.com/target"],
+            "bypassed_nawala": True,
+            "error": None,
+        }
+
+    monkeypatch.setattr("src.security.validation.trace_doh_chain", fake_doh_chain)
+
+    res = check_live_redirect("blockedgamblingsite.com")
+    assert res["status_code"] == 301
+    assert res["target_url"] == "https://realdestination.com/target"
+    assert res["hops"] == 1
+    assert res["bypassed_nawala"] is True
+    assert res["error"] is None
+
+
