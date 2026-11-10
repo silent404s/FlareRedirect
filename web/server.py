@@ -163,6 +163,7 @@ class FlareWebHandler(SimpleHTTPRequestHandler):
                     "id": acc.account_id,
                     "label": acc.label,
                     "auth_method": acc.auth_method,
+                    "is_connected": True,
                     "is_active": acc.account_id == active_session.active_id,
                     "domain_count": acc_zones,
                 })

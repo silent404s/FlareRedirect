@@ -195,10 +195,12 @@ async function loadStatus() {
     accountsList = data.accounts || [];
     activeAccount = data.active_account;
 
-    if (activeAccount && activeAccount.label) {
-      DOM.activeAccountText.textContent = `👤 ${activeAccount.label}`;
+    if (accountsList.length > 0) {
+      DOM.activeAccountText.textContent = `⚡ ${accountsList.length} Akun Siaga (Global)`;
+      DOM.activeAccountBadge.classList.add('connected');
     } else {
-      DOM.activeAccountText.textContent = 'Belum Terhubung';
+      DOM.activeAccountText.textContent = 'Belum Ada Akun';
+      DOM.activeAccountBadge.classList.remove('connected');
     }
 
     DOM.kpiAccountsCount.textContent = accountsList.length;
@@ -209,7 +211,7 @@ async function loadStatus() {
     accountsList.forEach(acc => {
       const opt = document.createElement('option');
       opt.value = acc.label;
-      opt.textContent = `👤 ${acc.label} (${acc.domain_count} Domain)`;
+      opt.textContent = `👤 ${acc.label} (${(acc.domain_count || 0).toLocaleString()} Domain)`;
       DOM.accountFilter.appendChild(opt);
     });
     DOM.accountFilter.value = currentVal || 'all';
@@ -927,15 +929,13 @@ function renderAccountsTable() {
     const tr = document.createElement('tr');
     tr.innerHTML = `
       <td style="font-weight: 600;">
-        ${acc.is_active ? '★ ' : ''}${acc.label}
-        ${acc.is_active ? '<span class="pill pill-success" style="margin-left: 6px;">Aktif</span>' : ''}
+        ${acc.label}
       </td>
-      <td>${acc.is_connected ? '<span style="color: var(--positive);">● Siaga</span>' : '<span style="color: var(--negative);">○ Terputus</span>'}</td>
+      <td><span style="color: var(--positive); font-weight: 500;">● Terhubung (Siaga)</span></td>
       <td class="tabular-nums">${(acc.domain_count || 0).toLocaleString()} Domain</td>
       <td style="text-align: right; display: flex; gap: 4px; justify-content: flex-end;">
         <button class="btn btn-secondary btn-icon" style="padding: 4px 8px; font-size: 11px;" title="Tarik ulang domain untuk akun ini saja" onclick="syncSingleAccount('${acc.label}')">🔄 Sync</button>
-        ${!acc.is_active ? `<button class="btn btn-secondary btn-icon" style="padding: 4px 8px; font-size: 11px;" onclick="switchAccount('${acc.label}')">Gunakan</button>` : ''}
-        <button class="btn btn-danger btn-icon" style="padding: 4px 8px; font-size: 11px;" onclick="deleteAccount('${acc.label}')">Putuskan</button>
+        <button class="btn btn-danger btn-icon" style="padding: 4px 8px; font-size: 11px;" title="Putuskan akun ini" onclick="deleteAccount('${acc.label}')">Putuskan</button>
       </td>
     `;
     DOM.accountsTableBody.appendChild(tr);
