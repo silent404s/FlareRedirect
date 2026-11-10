@@ -4,6 +4,7 @@ and matching hostnames to zones.
 """
 
 from typing import List, Dict, Any, Optional, Tuple
+from concurrent.futures import ThreadPoolExecutor
 from src.config import settings
 from src.cloudflare.client import cf_client
 from src.security.session import active_session
@@ -69,28 +70,43 @@ def _fetch_zones_for_single_account(
     return zones
 
 
+fetch_zones_for_account = _fetch_zones_for_single_account
+
+
 def fetch_all_zones(
     status_filter: Optional[str] = None,
     account_id: Optional[str] = None,
 ) -> List[ZoneItem]:
     """Fetches all accessible zones using Cloudflare pagination.
-    If account_id is 'all', aggregates zones from all connected accounts.
+    If account_id is 'all', aggregates zones from all connected accounts in parallel.
     If account_id is None, uses active account.
     """
     if account_id == "all":
         all_zones: List[ZoneItem] = []
-        for acc in active_session.get_all_accounts():
+        accounts = active_session.get_all_accounts()
+        if not accounts:
+            return []
+
+        def _fetch_acc(acc):
             try:
-                acc_zones = _fetch_zones_for_single_account(acc.account_id, acc.label, status_filter)
-                acc.zones = acc_zones
-                all_zones.extend(acc_zones)
+                acc_z = _fetch_zones_for_single_account(acc.account_id, acc.label, status_filter)
+                acc.zones = acc_z
+                return acc_z
             except Exception:
-                pass
+                return []
+
+        with ThreadPoolExecutor(max_workers=min(8, len(accounts))) as executor:
+            for acc_z in executor.map(_fetch_acc, accounts):
+                all_zones.extend(acc_z)
+
         return all_zones
 
     target_acc = None
     if account_id:
-        target_acc = next((a for a in active_session.get_all_accounts() if a.account_id == account_id), None)
+        target_acc = next(
+            (a for a in active_session.get_all_accounts() if a.account_id == account_id or a.label.lower() == account_id.lower()),
+            None
+        )
     else:
         target_acc = active_session.active_account
 

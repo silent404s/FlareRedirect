@@ -260,6 +260,37 @@ def save_cached_domains(
         return False
 
 
+def merge_cached_zones_for_account(new_zones: List[Any], account_label: str) -> int:
+    """Merges new zones for a specific account label into domains_cache.json,
+    replacing any previous zones for this account while keeping other accounts intact.
+    Returns total zones count.
+    """
+    cache = load_cached_domains()
+    existing_zones = cache.get("zones", [])
+    targets = cache.get("targets", {})
+    redirect_checks = cache.get("redirect_checks", {})
+
+    # Keep all zones from other accounts
+    other_zones = [z for z in existing_zones if (z.get("account_label") or "").lower() != account_label.lower()]
+
+    serialized_new = []
+    for z in new_zones:
+        if hasattr(z, "to_dict"):
+            serialized_new.append(z.to_dict())
+        elif isinstance(z, dict):
+            serialized_new.append({
+                "id": z.get("id", ""),
+                "name": z.get("name", ""),
+                "status": z.get("status", "unknown"),
+                "account_id": z.get("account_id", ""),
+                "account_label": z.get("account_label", account_label),
+            })
+
+    merged = other_zones + serialized_new
+    save_cached_domains(merged, targets=targets, redirect_checks=redirect_checks)
+    return len(merged)
+
+
 def load_cached_redirect_checks() -> Dict[str, Dict[str, Any]]:
     """Loads all saved live redirect check results from local cache."""
     cache = load_cached_domains()

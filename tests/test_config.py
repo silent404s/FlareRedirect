@@ -186,5 +186,41 @@ def test_prune_orphan_cached_domains(tmp_path, monkeypatch):
     assert "keep1.com" in loaded["redirect_checks"]
 
 
+def test_merge_cached_zones_for_account(tmp_path, monkeypatch):
+    import src.config_manager as cm
+
+    fake_cache = tmp_path / "data" / "domains_cache.json"
+    monkeypatch.setattr(cm, "get_domains_cache_path", lambda: fake_cache)
+    monkeypatch.setattr(cm, "get_data_dir", lambda: tmp_path / "data")
+
+    # Initial state with Account A
+    cm.save_cached_domains([
+        {"id": "za1", "name": "a1.com", "account_label": "Account A"},
+        {"id": "za2", "name": "a2.com", "account_label": "Account A"},
+    ])
+
+    # Merge Account B
+    total = cm.merge_cached_zones_for_account([
+        {"id": "zb1", "name": "b1.com", "account_label": "Account B"},
+    ], account_label="Account B")
+
+    assert total == 3
+    loaded = cm.load_cached_domains()
+    assert len(loaded["zones"]) == 3
+    labels = {z["account_label"] for z in loaded["zones"]}
+    assert labels == {"Account A", "Account B"}
+
+    # Update Account A with new zones (should replace A's old zones, keeping B)
+    total_updated = cm.merge_cached_zones_for_account([
+        {"id": "za_new", "name": "a_new.com", "account_label": "Account A"},
+    ], account_label="Account A")
+
+    assert total_updated == 2
+    loaded = cm.load_cached_domains()
+    names = {z["name"] for z in loaded["zones"]}
+    assert names == {"a_new.com", "b1.com"}
+
+
+
 
 

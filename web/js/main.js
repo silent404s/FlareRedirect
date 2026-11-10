@@ -876,7 +876,16 @@ async function cleanStaleCache() {
 }
 
 async function refreshFromCloudflare() {
-  const ok = confirm('Muat ulang daftar domain langsung dari server Cloudflare?\n\nData lokal akan diperbarui dengan data resmi terbaru.');
+  const selectedAcc = DOM.accountFilter.value;
+  let confirmMsg = 'Muat ulang daftar domain langsung dari server Cloudflare?\n\nData lokal akan diperbarui dengan data resmi terbaru.';
+  let reqPayload = { account_id: 'all' };
+
+  if (selectedAcc && selectedAcc !== 'all') {
+    confirmMsg = `Muat ulang domain dari Cloudflare untuk akun '${selectedAcc}' saja?\n\n(Pilih 'Semua Akun' pada dropdown filter jika ingin memuat seluruh akun)`;
+    reqPayload = { account_id: selectedAcc };
+  }
+
+  const ok = confirm(confirmMsg);
   if (!ok) return;
 
   DOM.refreshCfBtn.disabled = true;
@@ -886,13 +895,13 @@ async function refreshFromCloudflare() {
     const res = await fetch('/api/domains/refresh', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ account_id: 'all' })
+      body: JSON.stringify(reqPayload)
     });
     const data = await res.json();
     if (data.success) {
-      showToast(`Berhasil memuat ${data.count} domain dari Cloudflare!`);
-      loadDomains();
-      loadStatus();
+      showToast(`Berhasil memuat domain dari Cloudflare! Total ${data.count} domain.`);
+      await loadDomains();
+      await loadStatus();
     } else {
       alert('Gagal refresh dari Cloudflare: ' + data.error);
     }
@@ -921,9 +930,10 @@ function renderAccountsTable() {
       </td>
       <td>${acc.is_connected ? '<span style="color: var(--positive);">● Siaga</span>' : '<span style="color: var(--negative);">○ Terputus</span>'}</td>
       <td class="tabular-nums">${(acc.domain_count || 0).toLocaleString()} Domain</td>
-      <td style="text-align: right;">
-        ${!acc.is_active ? `<button class="btn btn-secondary btn-icon" onclick="switchAccount('${acc.label}')">Gunakan</button>` : ''}
-        <button class="btn btn-danger btn-icon" onclick="deleteAccount('${acc.label}')">Putuskan</button>
+      <td style="text-align: right; display: flex; gap: 4px; justify-content: flex-end;">
+        <button class="btn btn-secondary btn-icon" style="padding: 4px 8px; font-size: 11px;" title="Tarik ulang domain untuk akun ini saja" onclick="syncSingleAccount('${acc.label}')">🔄 Sync</button>
+        ${!acc.is_active ? `<button class="btn btn-secondary btn-icon" style="padding: 4px 8px; font-size: 11px;" onclick="switchAccount('${acc.label}')">Gunakan</button>` : ''}
+        <button class="btn btn-danger btn-icon" style="padding: 4px 8px; font-size: 11px;" onclick="deleteAccount('${acc.label}')">Putuskan</button>
       </td>
     `;
     DOM.accountsTableBody.appendChild(tr);
@@ -952,8 +962,20 @@ async function addNewAccount() {
     alert('Masukkan label nama akun.');
     return;
   }
+  if (method === 'token' && !token) {
+    alert('Masukkan API Token Cloudflare.');
+    return;
+  }
+  if (method === 'key' && (!globalKey || !email)) {
+    alert('Masukkan Global API Key dan Email.');
+    return;
+  }
 
+  const originalText = DOM.saveNewAccountBtn.innerHTML;
   DOM.saveNewAccountBtn.disabled = true;
+  DOM.saveNewAccountBtn.innerHTML = '⏳ Menghubungkan & Memuat Domain...';
+  showToast(`Menghubungkan akun '${label}' dan menarik domain dari Cloudflare...`);
+
   try {
     const res = await fetch('/api/accounts/add', {
       method: 'POST',
@@ -972,16 +994,40 @@ async function addNewAccount() {
       DOM.newAccountToken.value = '';
       DOM.newAccountGlobalKey.value = '';
       DOM.newAccountEmail.value = '';
-      showToast(`Akun '${label}' berhasil dihubungkan!`);
+      showToast(`✅ Akun '${label}' terhubung! ${data.zones_count || 0} domain berhasil dimuat.`);
       await loadStatus();
+      await loadDomains();
       renderAccountsTable();
     } else {
-      alert('Gagal menambahkan akun: ' + data.error);
+      alert('Gagal menambahkan akun: ' + (data.error || 'Terjadi kesalahan'));
     }
   } catch (err) {
     alert('Error: ' + err.message);
   } finally {
     DOM.saveNewAccountBtn.disabled = false;
+    DOM.saveNewAccountBtn.innerHTML = originalText;
+  }
+}
+
+async function syncSingleAccount(label) {
+  showToast(`Menarik daftar domain terbaru untuk akun '${label}'...`);
+  try {
+    const res = await fetch('/api/accounts/sync', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ label })
+    });
+    const data = await res.json();
+    if (data.success) {
+      showToast(`✅ Akun '${label}' berhasil disinkronkan (${data.zones_count} domain)!`);
+      await loadStatus();
+      await loadDomains();
+      renderAccountsTable();
+    } else {
+      alert('Gagal sinkronisasi: ' + (data.error || 'Terjadi kesalahan'));
+    }
+  } catch (err) {
+    alert('Error sync: ' + err.message);
   }
 }
 

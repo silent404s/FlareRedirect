@@ -160,3 +160,22 @@ def test_api_accounts_switch_not_found(web_server):
     code, data = http_post(f"{web_server}/api/accounts/switch", {"label": "NON_EXISTENT_LABEL_XYZ"})
     assert code == 400
     assert "error" in data
+
+
+def test_api_accounts_sync_not_found(web_server):
+    code, data = http_post(f"{web_server}/api/accounts/sync", {"label": "NON_EXISTENT_LABEL_XYZ"})
+    assert code == 400
+    assert "error" in data
+
+
+def test_api_accounts_add_invalid_token(web_server):
+    code, data = http_post(f"{web_server}/api/accounts/add", {
+        "label": "InvalidAccountTest",
+        "auth_method": "token",
+        "token": "invalid_fake_token_12345"
+    })
+    # Must fail verification against Cloudflare API
+    assert code == 400
+    assert "error" in data
+
+

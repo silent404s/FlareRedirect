@@ -23,7 +23,12 @@ if str(ROOT_DIR) not in sys.path:
 from src import config_manager
 from src.security.session import active_session
 from src.security.validation import check_live_redirect, validate_destination_url
-from src.cloudflare.zones import fetch_all_zones, find_zone_across_accounts, ZoneItem
+from src.cloudflare.zones import (
+    fetch_all_zones,
+    _fetch_zones_for_single_account,
+    find_zone_across_accounts,
+    ZoneItem,
+)
 from src.cloudflare.redirects import (
     create_redirect_rule,
     get_zone_redirect_ruleset,
@@ -253,6 +258,7 @@ class FlareWebHandler(SimpleHTTPRequestHandler):
             if not label:
                 label = f"Akun CF #{active_session.account_count + 1}"
 
+            aid = None
             try:
                 if auth_method == "key":
                     aid = active_session.add_account(label=label, auth_method="key", global_api_key=global_key, email=email)
@@ -261,11 +267,53 @@ class FlareWebHandler(SimpleHTTPRequestHandler):
                     aid = active_session.add_account(label=label, auth_method="token", token=token)
                     prof_data = {"auth_method": "token", "api_token": token, "global_api_key": "", "email": ""}
 
+                # Immediately validate credentials and fetch zones from Cloudflare API
+                zones = _fetch_zones_for_single_account(account_id=aid, account_label=label)
+
+                # Persist profile only after successful verification
                 config_manager.save_profile(label, prof_data, set_as_current=True)
                 active_session.switch_account(aid)
-                self._send_json(200, {"success": True, "label": label, "id": aid})
+
+                # Merge newly fetched domains into local cache
+                total_zones = config_manager.merge_cached_zones_for_account(zones, account_label=label)
+
+                self._send_json(200, {
+                    "success": True,
+                    "label": label,
+                    "id": aid,
+                    "zones_count": len(zones),
+                    "total_domains": total_zones,
+                })
             except Exception as exc:
-                self._send_json(400, {"error": str(exc)})
+                if aid and active_session.get_account(aid):
+                    active_session.remove_account(aid)
+                self._send_json(400, {"error": f"Gagal menghubungkan akun / memuat domain: {str(exc)}"})
+
+        elif path == "/api/accounts/sync":
+            label = body.get("label", "").strip()
+            acc_id = body.get("account_id", "").strip()
+
+            target_acc = None
+            if acc_id:
+                target_acc = active_session.get_account(acc_id)
+            if not target_acc and label:
+                target_acc = active_session.get_account_by_label(label)
+
+            if not target_acc:
+                self._send_json(400, {"error": "Akun tidak ditemukan dalam sesi"})
+                return
+
+            try:
+                zones = _fetch_zones_for_single_account(account_id=target_acc.account_id, account_label=target_acc.label)
+                total_zones = config_manager.merge_cached_zones_for_account(zones, account_label=target_acc.label)
+                self._send_json(200, {
+                    "success": True,
+                    "label": target_acc.label,
+                    "zones_count": len(zones),
+                    "total_domains": total_zones,
+                })
+            except Exception as exc:
+                self._send_json(500, {"error": f"Gagal sinkronisasi domain akun '{target_acc.label}': {str(exc)}"})
 
         elif path == "/api/accounts/delete":
             label = body.get("label", "").strip()
@@ -287,14 +335,24 @@ class FlareWebHandler(SimpleHTTPRequestHandler):
             self._send_json(200, {"success": True, "pruned_count": pruned, "remaining_count": len(cache.get("zones", []))})
 
         elif path == "/api/domains/refresh":
-            # Fetch zones from Cloudflare directly
+            # Fetch zones from Cloudflare directly (supports single account or all accounts)
+            account_id = body.get("account_id", "all")
             try:
-                zones = fetch_all_zones(status_filter="all", account_id="all")
-                cache = config_manager.load_cached_domains()
-                targets = cache.get("targets", {})
-                checks = cache.get("redirect_checks", {})
-                config_manager.save_cached_domains(zones, targets=targets, redirect_checks=checks)
-                self._send_json(200, {"success": True, "count": len(zones)})
+                if account_id and account_id != "all":
+                    target_acc = active_session.get_account(account_id) or active_session.get_account_by_label(account_id)
+                    if not target_acc:
+                        self._send_json(400, {"error": f"Akun '{account_id}' tidak ditemukan dalam sesi"})
+                        return
+                    zones = _fetch_zones_for_single_account(account_id=target_acc.account_id, account_label=target_acc.label)
+                    total_count = config_manager.merge_cached_zones_for_account(zones, account_label=target_acc.label)
+                    self._send_json(200, {"success": True, "count": total_count, "account_zones": len(zones), "label": target_acc.label})
+                else:
+                    zones = fetch_all_zones(status_filter="all", account_id="all")
+                    cache = config_manager.load_cached_domains()
+                    targets = cache.get("targets", {})
+                    checks = cache.get("redirect_checks", {})
+                    config_manager.save_cached_domains(zones, targets=targets, redirect_checks=checks)
+                    self._send_json(200, {"success": True, "count": len(zones)})
             except Exception as exc:
                 self._send_json(500, {"error": str(exc)})
 
