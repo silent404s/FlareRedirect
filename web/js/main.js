@@ -294,6 +294,57 @@ function updateKpis() {
   DOM.kpiNoRedirects.textContent = none.toLocaleString();
 }
 
+// --- TARGET MATCHING & EXTRACTION HELPERS ---
+
+function extractCleanHost(urlOrDomain) {
+  if (!urlOrDomain) return '';
+  let str = String(urlOrDomain).trim().toLowerCase();
+  if (str.startsWith('https://')) str = str.slice(8);
+  else if (str.startsWith('http://')) str = str.slice(7);
+  if (str.startsWith('www.')) str = str.slice(4);
+  return str.split('/')[0].split('?')[0].split(':')[0].trim();
+}
+
+function matchesTargetDestination(destUrl, targetQuery) {
+  if (!destUrl || !targetQuery) return false;
+  const destStr = String(destUrl).trim().toLowerCase();
+  const queryStr = String(targetQuery).trim().toLowerCase();
+
+  // 1. Exact string match
+  if (destStr === queryStr) return true;
+
+  const cleanQueryHost = extractCleanHost(queryStr);
+  const isDomainQuery = cleanQueryHost.includes('.');
+
+  // Check if query has a specific path (e.g. "nagawin.com/m/referral" or "/m/referral")
+  let queryPath = '';
+  const rawNoProto = queryStr.replace(/^https?:\/\//i, '');
+  if (rawNoProto.includes('/')) {
+    const parts = rawNoProto.split('/');
+    if (parts.length > 1 && parts.slice(1).join('/').trim()) {
+      queryPath = '/' + parts.slice(1).join('/').trim().replace(/\/+$/, '');
+    }
+  }
+
+  const destHost = extractCleanHost(destStr);
+
+  if (isDomainQuery) {
+    // Strict host matching: exact hostname OR valid subdomain
+    // Contoh: "nagawin.com" HANYA cocok dengan "nagawin.com" & "sub.nagawin.com",
+    // TIDAK AKAN cocok dengan "agen9nagawin.com" atau "nagawin.com.co"!
+    const hostMatches = (destHost === cleanQueryHost) || destHost.endsWith('.' + cleanQueryHost);
+    if (!hostMatches) return false;
+
+    if (queryPath) {
+      return destStr.includes(queryPath);
+    }
+    return true;
+  } else {
+    // Non-domain query (misal kata kunci "veldtrip", "referral", "/promo")
+    return destStr.includes(queryStr) || (cleanQueryHost && destHost.includes(cleanQueryHost));
+  }
+}
+
 // --- FILTER & PAGINATION ENGINE ---
 
 function filterAndRender() {
@@ -303,13 +354,6 @@ function filterAndRender() {
   const selectedStatus = DOM.statusFilter.value.toLowerCase();
   const selectedRedirect = DOM.redirectFilter.value;
 
-  const cleanTargetHost = targetQuery
-    .replace(/^https?:\/\//i, '')
-    .replace(/^www\./i, '')
-    .split('/')[0]
-    .split('?')[0]
-    .trim();
-
   filteredZones = allZones.filter(z => {
     // 1. Source domain match
     if (query && !z.name.toLowerCase().includes(query)) {
@@ -318,22 +362,49 @@ function filterAndRender() {
 
     // 2. Destination / Target URL match (Reverse redirect search)
     if (targetQuery) {
-      const ruleTarget = (targetsMap[z.id] || '').toLowerCase();
-      const chk = redirectChecksMap[z.name.toLowerCase()];
-      const liveTarget = (chk && chk.target_url) ? chk.target_url.toLowerCase() : '';
-      const finalTarget = (chk && chk.final_url) ? chk.final_url.toLowerCase() : '';
-      const chain = (chk && Array.isArray(chk.chain)) ? chk.chain : [];
+      const candidates = [];
 
-      let matched = false;
-      if (ruleTarget.includes(targetQuery) || liveTarget.includes(targetQuery) || finalTarget.includes(targetQuery)) {
-        matched = true;
-      } else if (cleanTargetHost && (ruleTarget.includes(cleanTargetHost) || liveTarget.includes(cleanTargetHost) || finalTarget.includes(cleanTargetHost))) {
-        matched = true;
-      } else if (chain.some(c => c.toLowerCase().includes(targetQuery) || (cleanTargetHost && c.toLowerCase().includes(cleanTargetHost)))) {
-        matched = true;
+      // A. Cloudflare rule target
+      const cfTarget = targetsMap[z.id];
+      if (cfTarget && typeof cfTarget === 'string' && cfTarget.trim()) {
+        candidates.push(cfTarget.trim());
       }
 
-      if (!matched) return false;
+      // B. Live HTTP redirect target (HANYA jika domain benar-benar memiliki redirect!)
+      const chk = redirectChecksMap[z.name.toLowerCase()];
+      if (chk) {
+        const isLiveRedirect = Boolean(
+          chk.has_redirect ||
+          (chk.hops && chk.hops > 0) ||
+          (chk.target_url && chk.target_url.trim()) ||
+          [301, 302, 303, 307, 308].includes(chk.status_code)
+        );
+
+        if (isLiveRedirect) {
+          if (chk.target_url && typeof chk.target_url === 'string' && chk.target_url.trim()) {
+            candidates.push(chk.target_url.trim());
+          }
+          if (chk.final_url && typeof chk.final_url === 'string' && chk.final_url.trim()) {
+            candidates.push(chk.final_url.trim());
+          }
+          if (Array.isArray(chk.chain)) {
+            chk.chain.forEach(c => {
+              if (c && typeof c === 'string' && c.trim()) {
+                candidates.push(c.trim());
+              }
+            });
+          }
+        }
+      }
+
+      // Domain tanpa aturan Cloudflare dan tanpa redirect (misal: 200 OK Tanpa Redirect)
+      // TIDAK memiliki target tujuan apa pun!
+      if (candidates.length === 0) {
+        return false;
+      }
+
+      const isMatch = candidates.some(cand => matchesTargetDestination(cand, targetQuery));
+      if (!isMatch) return false;
     }
 
     // 3. Account match
@@ -1187,14 +1258,8 @@ function showToast(message, isError = false) {
 
 function filterByTargetDestination(rawUrl) {
   if (!rawUrl) return;
-  let host = rawUrl.trim();
-  try {
-    const parsed = new URL(host.startsWith('http') ? host : 'https://' + host);
-    host = parsed.hostname.toLowerCase();
-    if (host.startsWith('www.')) host = host.slice(4);
-  } catch (e) {
-    host = host.replace(/^https?:\/\//i, '').replace(/^www\./i, '').split('/')[0].split('?')[0].toLowerCase();
-  }
+  const host = extractCleanHost(rawUrl);
+  if (!host) return;
   if (DOM.searchTargetInput) {
     DOM.searchTargetInput.value = host;
   }
@@ -1215,20 +1280,22 @@ function renderTargetExplorerTable() {
 
   allZones.forEach(z => {
     const chk = redirectChecksMap[z.name.toLowerCase()];
-    const t = (chk && chk.target_url) ? chk.target_url : targetsMap[z.id];
-    if (t) {
-      let raw = t.trim();
-      let host = '';
-      try {
-        const u = new URL(raw.startsWith('http') ? raw : 'https://' + raw);
-        host = u.hostname.toLowerCase();
-        if (host.startsWith('www.')) host = host.slice(4);
-      } catch (e) {
-        host = raw.replace(/^https?:\/\//i, '').replace(/^www\./i, '').split('/')[0].split('?')[0].toLowerCase();
-      }
+    const isLive = chk && Boolean(
+      chk.has_redirect ||
+      (chk.hops && chk.hops > 0) ||
+      (chk.target_url && chk.target_url.trim()) ||
+      [301, 302, 303, 307, 308].includes(chk.status_code)
+    );
+
+    const rawTarget = isLive
+      ? (chk.final_url || chk.target_url)
+      : (targetsMap[z.id] || '');
+
+    if (rawTarget && rawTarget.trim()) {
+      const host = extractCleanHost(rawTarget);
       if (host) {
         if (!targetMapCount[host]) {
-          targetMapCount[host] = { host: host, sampleUrl: raw, count: 0 };
+          targetMapCount[host] = { host: host, sampleUrl: rawTarget.trim(), count: 0 };
         }
         targetMapCount[host].count++;
       }
@@ -1237,7 +1304,7 @@ function renderTargetExplorerTable() {
 
   let sortedTargets = Object.values(targetMapCount).sort((a, b) => b.count - a.count);
   if (query) {
-    sortedTargets = sortedTargets.filter(item => item.host.includes(query) || item.sampleUrl.toLowerCase().includes(query));
+    sortedTargets = sortedTargets.filter(item => matchesTargetDestination(item.sampleUrl, query) || item.host.includes(query));
   }
 
   DOM.targetExplorerTableBody.innerHTML = '';
