@@ -460,7 +460,7 @@ class FlareWebHandler(SimpleHTTPRequestHandler):
             zone_id = body.get("zone_id", "").strip()
             source = body.get("source_hostname", "").strip()
             dest = body.get("destination_url", "").strip()
-            is_delete = body.get("delete", False)
+            is_delete = body.get("delete") is True or str(body.get("delete", "")).lower() == "true"
             account_id = body.get("account_id")
 
             if not zone_id or not source:
@@ -468,11 +468,14 @@ class FlareWebHandler(SimpleHTTPRequestHandler):
                 return
 
             try:
-                if is_delete or dest in ("", "-"):
+                if is_delete:
                     count = delete_matching_redirects_for_domain(zone_id, source, account_id=account_id)
                     config_manager.update_cached_target(zone_id, None)
                     self._send_json(200, {"success": True, "message": f"{count} aturan redirect dihapus."})
                 else:
+                    if not dest or dest in ("", "-"):
+                        self._send_json(400, {"error": "Masukkan URL tujuan redirect yang valid"})
+                        return
                     norm_target, _ = validate_destination_url(dest, source_host=source)
                     create_redirect_rule(
                         zone_id=zone_id,

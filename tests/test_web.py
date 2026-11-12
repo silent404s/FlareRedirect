@@ -143,6 +143,14 @@ def test_api_single_redirect_missing_params(web_server):
     assert code == 400
     assert "error" in data
 
+    # Test missing destination when delete is False
+    code2, data2 = http_post(
+        f"{web_server}/api/redirect/single",
+        {"zone_id": "dummy_zone", "source_hostname": "test.com", "destination_url": "", "delete": False}
+    )
+    assert code2 == 400
+    assert "URL tujuan" in data2.get("error", "")
+
 
 def test_api_bulk_redirect_empty(web_server):
     code, data = http_post(f"{web_server}/api/redirect/bulk", {"items": []})

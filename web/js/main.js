@@ -205,8 +205,14 @@ function initEventListeners() {
   DOM.refreshCfBtn.addEventListener('click', refreshFromCloudflare);
 
   // Single Modal Actions
-  DOM.saveSingleRedirectBtn.addEventListener('click', saveSingleRedirect);
+  DOM.saveSingleRedirectBtn.addEventListener('click', () => saveSingleRedirect(false));
   DOM.deleteSingleRedirectBtn.addEventListener('click', () => saveSingleRedirect(true));
+  DOM.singleTargetInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      saveSingleRedirect(false);
+    }
+  });
 
   // Accounts Modal
   DOM.openAccountsBtn.addEventListener('click', openAccountsModal);
@@ -843,12 +849,14 @@ function openSingleModal(zone) {
 }
 
 async function saveSingleRedirect(isDelete = false) {
+  // Pastikan isDelete strictly boolean (cegah PointerEvent / MouseEvent terkirim sebagai truthy)
+  const deleteMode = (isDelete === true);
   const zoneId = DOM.singleModalZoneId.value;
   const source = DOM.singleModalDomain.textContent;
   const target = DOM.singleTargetInput.value.trim();
   const accountId = DOM.singleModalAccountId.value;
 
-  if (!isDelete && !target) {
+  if (!deleteMode && !target) {
     alert('Masukkan URL tujuan redirect terlebih dahulu.');
     return;
   }
@@ -862,14 +870,14 @@ async function saveSingleRedirect(isDelete = false) {
         source_hostname: source,
         destination_url: target,
         account_id: accountId,
-        delete: isDelete
+        delete: deleteMode
       })
     });
     const data = await res.json();
 
     if (data.success) {
       closeModal('singleModal');
-      if (isDelete) {
+      if (deleteMode) {
         delete targetsMap[zoneId];
         showToast(`Aturan redirect untuk '${source}' berhasil dihapus.`);
       } else {
