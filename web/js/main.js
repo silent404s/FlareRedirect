@@ -39,6 +39,13 @@ const DOM = {
   // Toolbar & Filters
   domainCountBadge: document.getElementById('domainCountBadge'),
   searchInput: document.getElementById('searchInput'),
+  searchTargetInput: document.getElementById('searchTargetInput'),
+  clearTargetSearchBtn: document.getElementById('clearTargetSearchBtn'),
+  targetSearchBanner: document.getElementById('targetSearchBanner'),
+  targetSearchQueryText: document.getElementById('targetSearchQueryText'),
+  targetSearchCount: document.getElementById('targetSearchCount'),
+  resetTargetFilterBtn: document.getElementById('resetTargetFilterBtn'),
+  openTargetExplorerBtn: document.getElementById('openTargetExplorerBtn'),
   accountFilter: document.getElementById('accountFilter'),
   statusFilter: document.getElementById('statusFilter'),
   redirectFilter: document.getElementById('redirectFilter'),
@@ -95,6 +102,10 @@ const DOM = {
   newAccountEmail: document.getElementById('newAccountEmail'),
   saveNewAccountBtn: document.getElementById('saveNewAccountBtn'),
   accountsTableBody: document.getElementById('accountsTableBody'),
+
+  targetExplorerModal: document.getElementById('targetExplorerModal'),
+  targetExplorerSearchInput: document.getElementById('targetExplorerSearchInput'),
+  targetExplorerTableBody: document.getElementById('targetExplorerTableBody'),
 };
 
 // --- INIT ---
@@ -107,6 +118,20 @@ document.addEventListener('DOMContentLoaded', () => {
 function initEventListeners() {
   // Search & Filters
   DOM.searchInput.addEventListener('input', () => {
+    currentPage = 1;
+    filterAndRender();
+  });
+  DOM.searchTargetInput.addEventListener('input', () => {
+    currentPage = 1;
+    filterAndRender();
+  });
+  DOM.clearTargetSearchBtn.addEventListener('click', () => {
+    DOM.searchTargetInput.value = '';
+    currentPage = 1;
+    filterAndRender();
+  });
+  DOM.resetTargetFilterBtn.addEventListener('click', () => {
+    DOM.searchTargetInput.value = '';
     currentPage = 1;
     filterAndRender();
   });
@@ -169,6 +194,8 @@ function initEventListeners() {
   });
 
   // Action Buttons
+  DOM.openTargetExplorerBtn.addEventListener('click', openTargetExplorerModal);
+  DOM.targetExplorerSearchInput.addEventListener('input', renderTargetExplorerTable);
   DOM.checkLiveBtn.addEventListener('click', startLiveRedirectCheck);
   DOM.cancelCheckBtn.addEventListener('click', cancelLiveRedirectCheck);
   DOM.openBulkBtn.addEventListener('click', openBulkModal);
@@ -265,24 +292,53 @@ function updateKpis() {
 
 function filterAndRender() {
   const query = DOM.searchInput.value.trim().toLowerCase();
+  const targetQuery = (DOM.searchTargetInput ? DOM.searchTargetInput.value.trim().toLowerCase() : '');
   const selectedAccount = DOM.accountFilter.value.toLowerCase();
   const selectedStatus = DOM.statusFilter.value.toLowerCase();
   const selectedRedirect = DOM.redirectFilter.value;
 
+  const cleanTargetHost = targetQuery
+    .replace(/^https?:\/\//i, '')
+    .replace(/^www\./i, '')
+    .split('/')[0]
+    .split('?')[0]
+    .trim();
+
   filteredZones = allZones.filter(z => {
-    // Search query match
+    // 1. Source domain match
     if (query && !z.name.toLowerCase().includes(query)) {
       return false;
     }
-    // Account match
+
+    // 2. Destination / Target URL match (Reverse redirect search)
+    if (targetQuery) {
+      const ruleTarget = (targetsMap[z.id] || '').toLowerCase();
+      const chk = redirectChecksMap[z.name.toLowerCase()];
+      const liveTarget = (chk && chk.target_url) ? chk.target_url.toLowerCase() : '';
+      const finalTarget = (chk && chk.final_url) ? chk.final_url.toLowerCase() : '';
+      const chain = (chk && Array.isArray(chk.chain)) ? chk.chain : [];
+
+      let matched = false;
+      if (ruleTarget.includes(targetQuery) || liveTarget.includes(targetQuery) || finalTarget.includes(targetQuery)) {
+        matched = true;
+      } else if (cleanTargetHost && (ruleTarget.includes(cleanTargetHost) || liveTarget.includes(cleanTargetHost) || finalTarget.includes(cleanTargetHost))) {
+        matched = true;
+      } else if (chain.some(c => c.toLowerCase().includes(targetQuery) || (cleanTargetHost && c.toLowerCase().includes(cleanTargetHost)))) {
+        matched = true;
+      }
+
+      if (!matched) return false;
+    }
+
+    // 3. Account match
     if (selectedAccount !== 'all' && (z.account_label || '').toLowerCase() !== selectedAccount) {
       return false;
     }
-    // Status CF match
+    // 4. Status CF match
     if (selectedStatus !== 'all' && (z.status || '').toLowerCase() !== selectedStatus) {
       return false;
     }
-    // Redirect Status match
+    // 5. Redirect Status match
     const chk = redirectChecksMap[z.name.toLowerCase()];
     if (selectedRedirect === 'multiple') {
       if (!chk || !(chk.is_multiple || (chk.hops && chk.hops > 1))) return false;
@@ -298,6 +354,19 @@ function filterAndRender() {
 
     return true;
   });
+
+  // Update Target Search Banner
+  if (DOM.targetSearchBanner) {
+    if (targetQuery) {
+      DOM.targetSearchBanner.style.display = 'flex';
+      DOM.targetSearchQueryText.textContent = targetQuery;
+      DOM.targetSearchCount.textContent = filteredZones.length.toLocaleString();
+      if (DOM.clearTargetSearchBtn) DOM.clearTargetSearchBtn.style.display = 'block';
+    } else {
+      DOM.targetSearchBanner.style.display = 'none';
+      if (DOM.clearTargetSearchBtn) DOM.clearTargetSearchBtn.style.display = 'none';
+    }
+  }
 
   DOM.domainCountBadge.textContent = `${filteredZones.length.toLocaleString()} Domain`;
   renderCurrentPage();
@@ -405,15 +474,23 @@ function renderCurrentPage() {
       const nawalaBadge = chkData.bypassed_nawala ? ' <span title="Bypass Nawala/Internet Positif via DoH">🛡️</span>' : '';
       if (isMult) {
         const pill = document.createElement('span');
-        pill.className = 'pill pill-warning';
+        pill.className = 'pill pill-warning clickable-target-badge';
         pill.innerHTML = `⚠️ [${code} • ${hops}x] ${target}${nawalaBadge}`;
-        pill.title = `PERINGATAN: Terdeteksi ${hops}x Pengalihan! Rantai: ${chkData.chain ? chkData.chain.join(' → ') : target}${chkData.bypassed_nawala ? ' (Bypass Nawala/ISP)' : ''}`;
+        pill.title = `PERINGATAN: Terdeteksi ${hops}x Pengalihan! Rantai: ${chkData.chain ? chkData.chain.join(' → ') : target}${chkData.bypassed_nawala ? ' (Bypass Nawala/ISP)' : ''}\n\n👉 Klik untuk mencari semua domain yang mengarah ke target ini`;
+        pill.addEventListener('click', (e) => {
+          e.stopPropagation();
+          filterByTargetDestination(target);
+        });
         tdTarget.appendChild(pill);
       } else if (hops === 1) {
         const pill = document.createElement('span');
-        pill.className = 'pill pill-success';
+        pill.className = 'pill pill-success clickable-target-badge';
         pill.innerHTML = `✅ [${code || 301}] ${target}${nawalaBadge}`;
-        pill.title = `Normal 1x Redirect: ${target}${chkData.bypassed_nawala ? ' (Bypass Nawala/ISP)' : ''}`;
+        pill.title = `Normal 1x Redirect: ${target}${chkData.bypassed_nawala ? ' (Bypass Nawala/ISP)' : ''}\n\n👉 Klik untuk mencari semua domain yang mengarah ke target ini`;
+        pill.addEventListener('click', (e) => {
+          e.stopPropagation();
+          filterByTargetDestination(target);
+        });
         tdTarget.appendChild(pill);
       } else if (chkData.error) {
         const pill = document.createElement('span');
@@ -430,10 +507,14 @@ function renderCurrentPage() {
       const curTarget = targetsMap[z.id];
       if (curTarget) {
         const pill = document.createElement('span');
-        pill.className = 'pill pill-neutral';
+        pill.className = 'pill pill-neutral clickable-target-badge';
         pill.style.color = '#38bdf8';
         pill.textContent = `[CF Rule] ${curTarget}`;
-        pill.title = 'Target dari aturan lokal (belum diperiksa live)';
+        pill.title = 'Target dari aturan lokal (belum diperiksa live)\n\n👉 Klik untuk mencari semua domain yang mengarah ke target ini';
+        pill.addEventListener('click', (e) => {
+          e.stopPropagation();
+          filterByTargetDestination(curTarget);
+        });
         tdTarget.appendChild(pill);
       } else {
         tdTarget.innerHTML = '<span style="color: var(--text-subtle);">- (Belum dicek)</span>';
@@ -1093,4 +1174,104 @@ function showToast(message, isError = false) {
     setTimeout(() => toast.remove(), 200);
   }, 4000);
 }
+
+// --- TARGET DESTINATIONS DIRECTORY & REVERSE LOOKUP ---
+
+function filterByTargetDestination(rawUrl) {
+  if (!rawUrl) return;
+  let host = rawUrl.trim();
+  try {
+    const parsed = new URL(host.startsWith('http') ? host : 'https://' + host);
+    host = parsed.hostname.toLowerCase();
+    if (host.startsWith('www.')) host = host.slice(4);
+  } catch (e) {
+    host = host.replace(/^https?:\/\//i, '').replace(/^www\./i, '').split('/')[0].split('?')[0].toLowerCase();
+  }
+  if (DOM.searchTargetInput) {
+    DOM.searchTargetInput.value = host;
+  }
+  currentPage = 1;
+  filterAndRender();
+  showToast(`🎯 Memfilter domain yang mengarah ke '${host}'`);
+}
+
+function openTargetExplorerModal() {
+  if (DOM.targetExplorerSearchInput) DOM.targetExplorerSearchInput.value = '';
+  renderTargetExplorerTable();
+  DOM.targetExplorerModal.style.display = 'flex';
+}
+
+function renderTargetExplorerTable() {
+  const query = (DOM.targetExplorerSearchInput ? DOM.targetExplorerSearchInput.value : '').trim().toLowerCase();
+  const targetMapCount = {};
+
+  allZones.forEach(z => {
+    const chk = redirectChecksMap[z.name.toLowerCase()];
+    const t = (chk && chk.target_url) ? chk.target_url : targetsMap[z.id];
+    if (t) {
+      let raw = t.trim();
+      let host = '';
+      try {
+        const u = new URL(raw.startsWith('http') ? raw : 'https://' + raw);
+        host = u.hostname.toLowerCase();
+        if (host.startsWith('www.')) host = host.slice(4);
+      } catch (e) {
+        host = raw.replace(/^https?:\/\//i, '').replace(/^www\./i, '').split('/')[0].split('?')[0].toLowerCase();
+      }
+      if (host) {
+        if (!targetMapCount[host]) {
+          targetMapCount[host] = { host: host, sampleUrl: raw, count: 0 };
+        }
+        targetMapCount[host].count++;
+      }
+    }
+  });
+
+  let sortedTargets = Object.values(targetMapCount).sort((a, b) => b.count - a.count);
+  if (query) {
+    sortedTargets = sortedTargets.filter(item => item.host.includes(query) || item.sampleUrl.toLowerCase().includes(query));
+  }
+
+  DOM.targetExplorerTableBody.innerHTML = '';
+  if (sortedTargets.length === 0) {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td colspan="4" style="text-align: center; color: var(--text-muted); padding: 24px;">Tidak ada domain target tujuan yang ditemukan.</td>`;
+    DOM.targetExplorerTableBody.appendChild(tr);
+    return;
+  }
+
+  sortedTargets.forEach((item, idx) => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td style="color: var(--text-muted);">${idx + 1}</td>
+      <td>
+        <span style="font-weight: 600; color: #38bdf8; font-size: 13px;">${item.host}</span>
+        <span style="display: block; font-size: 11px; color: var(--text-subtle); margin-top: 2px;">${item.sampleUrl}</span>
+      </td>
+      <td style="text-align: center;">
+        <span class="pill pill-success" style="font-size: 11px; font-weight: 600;">${item.count.toLocaleString()} Domain</span>
+      </td>
+      <td style="text-align: right;">
+        <button class="btn btn-secondary btn-icon" style="padding: 4px 10px; font-size: 11px;" onclick="selectTargetFromExplorer('${item.host}')">
+          🔍 Filter
+        </button>
+      </td>
+    `;
+    DOM.targetExplorerTableBody.appendChild(tr);
+  });
+}
+
+function selectTargetFromExplorer(host) {
+  closeModal('targetExplorerModal');
+  if (DOM.searchTargetInput) {
+    DOM.searchTargetInput.value = host;
+  }
+  currentPage = 1;
+  filterAndRender();
+  showToast(`🎯 Menampilkan domain yang mengarah ke '${host}'`);
+}
+
+window.selectTargetFromExplorer = selectTargetFromExplorer;
+window.filterByTargetDestination = filterByTargetDestination;
+window.openTargetExplorerModal = openTargetExplorerModal;
 

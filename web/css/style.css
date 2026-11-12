@@ -355,8 +355,66 @@ main.app-main {
 
 .search-box {
   flex: 2;
-  min-width: 240px;
+  min-width: 220px;
   position: relative;
+}
+
+.search-target-box input:focus {
+  border-color: #38bdf8;
+}
+
+.clear-search-btn {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 14px;
+  padding: 0 4px;
+  line-height: 1;
+}
+.clear-search-btn:hover {
+  color: var(--text);
+}
+
+.target-search-banner {
+  margin-top: 8px;
+  padding: 8px 12px;
+  background-color: rgba(56, 189, 248, 0.08);
+  border: 1px solid rgba(56, 189, 248, 0.25);
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  color: #38bdf8;
+}
+
+.btn-reset-filter {
+  background: none;
+  border: 1px solid rgba(56, 189, 248, 0.35);
+  color: #38bdf8;
+  border-radius: 4px;
+  padding: 2px 8px;
+  font-size: 11px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.btn-reset-filter:hover {
+  background-color: rgba(56, 189, 248, 0.2);
+  color: #ffffff;
+}
+
+.clickable-target-badge {
+  cursor: pointer;
+  transition: transform 0.1s ease, filter 0.15s ease;
+}
+.clickable-target-badge:hover {
+  filter: brightness(1.2);
+  transform: translateY(-1px);
 }
 
 .search-box input {

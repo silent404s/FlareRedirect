@@ -74,6 +74,9 @@
           </div>
 
           <div class="toolbar-actions">
+            <button id="openTargetExplorerBtn" class="btn btn-secondary btn-icon" title="Lihat direktori seluruh domain target tujuan dan jumlah domain yang mengarah ke masing-masing target">
+              🎯 Direktori Target
+            </button>
             <button id="checkLiveBtn" class="btn btn-cyan" title="Periksa status live HTTP/HTTPS redirect dan deteksi >1x redirect">
               🔍 Cek Live Redirect
             </button>
@@ -96,7 +99,13 @@
         <div class="toolbar-filter-row">
           <div class="search-box">
             <span class="search-icon">🔍</span>
-            <input type="text" id="searchInput" placeholder="Cari domain secara instan...">
+            <input type="text" id="searchInput" placeholder="Cari domain sumber (asal)...">
+          </div>
+
+          <div class="search-box search-target-box">
+            <span class="search-icon">🎯</span>
+            <input type="text" id="searchTargetInput" placeholder="Cari URL/domain tujuan (misal: domain.com)...">
+            <button id="clearTargetSearchBtn" class="clear-search-btn" title="Hapus filter target" style="display: none;">&times;</button>
           </div>
 
           <div class="filter-group">
@@ -128,6 +137,12 @@
               <option value="untested">Belum Diperiksa</option>
             </select>
           </div>
+        </div>
+
+        <!-- Target Search Banner Indicator -->
+        <div id="targetSearchBanner" class="target-search-banner" style="display: none;">
+          <span>🎯 Memfilter domain yang mengarah ke target: <strong id="targetSearchQueryText" style="text-decoration: underline;">-</strong> (<span id="targetSearchCount">0</span> domain ditemukan)</span>
+          <button id="resetTargetFilterBtn" class="btn-reset-filter">✕ Reset Pencarian Target</button>
         </div>
       </section>
 
@@ -305,6 +320,43 @@
       </div>
       <div class="modal-footer">
         <button class="btn btn-secondary" onclick="closeModal('accountsModal')">Tutup</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Target Destinations Directory (Reverse Redirect Lookup) -->
+  <div id="targetExplorerModal" class="modal-overlay" style="display: none;">
+    <div class="modal-card" style="max-width: 680px;">
+      <div class="modal-header">
+        <span class="modal-title">🎯 Direktori Domain Tujuan (Reverse Redirect Lookup)</span>
+        <button class="modal-close-btn" onclick="closeModal('targetExplorerModal')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p style="font-size: 12px; color: var(--text-muted); margin-bottom: 10px;">
+          Daftar seluruh domain/URL tujuan pengalihan yang terdeteksi, diurutkan dari yang paling banyak diarahkan.
+        </p>
+        <div class="search-box" style="margin-bottom: 12px; width: 100%;">
+          <span class="search-icon">🔍</span>
+          <input type="text" id="targetExplorerSearchInput" placeholder="Ketik untuk memfilter nama domain target...">
+        </div>
+        <div class="table-responsive" style="max-height: 380px; overflow-y: auto;">
+          <table class="data-table" style="font-size: 12px;">
+            <thead>
+              <tr>
+                <th style="width: 40px;">No.</th>
+                <th>Domain / URL Tujuan (Target)</th>
+                <th style="width: 140px; text-align: center;">Total Domain Mengarah</th>
+                <th style="width: 110px; text-align: right;">Aksi</th>
+              </tr>
+            </thead>
+            <tbody id="targetExplorerTableBody">
+              <!-- Populated via JS -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="closeModal('targetExplorerModal')">Tutup</button>
       </div>
     </div>
   </div>
