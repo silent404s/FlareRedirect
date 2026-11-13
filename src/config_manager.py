@@ -253,8 +253,10 @@ def save_cached_domains(
         }
 
         cache_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(cache_path, "w", encoding="utf-8") as f:
+        temp_path = cache_path.with_suffix(".tmp")
+        with open(temp_path, "w", encoding="utf-8") as f:
             json.dump(payload, f, indent=4, ensure_ascii=False)
+        temp_path.replace(cache_path)
         return True
     except Exception:
         return False
