@@ -6,6 +6,8 @@ from src.cloudflare.redirects import (
     update_redirect_rule,
     toggle_redirect_rule_status,
     detect_redirect_conflicts,
+    is_rule_matching_source,
+    RedirectRule,
 )
 from src.cloudflare.zones import find_matching_zone, ZoneItem, group_zones_by_target
 from src.security.validation import simulate_redirect
@@ -296,3 +298,34 @@ def test_detect_redirect_conflicts_scenarios(monkeypatch):
     assert res_anomaly["status"] == "REDFLAG_ANOMALY"
     assert res_anomaly["is_conflict"] is True
     assert res_anomaly["count"] == 2
+
+
+def test_is_rule_matching_source_no_substring_false_positives():
+    # Rule for notexample.com must NOT match example.com
+    rule_other = RedirectRule(
+        {
+            "id": "r99",
+            "expression": 'http.host eq "notexample.com"',
+            "action": "redirect",
+            "action_parameters": {"from_value": {"status_code": 301, "target_url": {"value": "https://target.com"}}},
+        },
+        zone_id="z1",
+        ruleset_id="rs1",
+    )
+    assert is_rule_matching_source(rule_other, "example.com") is False
+    assert is_rule_matching_source(rule_other, "notexample.com") is True
+
+    # Rule with quoted exact host
+    rule_exact = RedirectRule(
+        {
+            "id": "r100",
+            "expression": '(http.host eq "example.com" or http.host eq "www.example.com")',
+            "action": "redirect",
+            "action_parameters": {"from_value": {"status_code": 301, "target_url": {"value": "https://target.com"}}},
+        },
+        zone_id="z1",
+        ruleset_id="rs1",
+    )
+    assert is_rule_matching_source(rule_exact, "example.com") is True
+    assert is_rule_matching_source(rule_exact, "amp.example.com") is False
+

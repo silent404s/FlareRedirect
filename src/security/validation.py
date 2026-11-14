@@ -17,6 +17,7 @@ from urllib.parse import urlsplit, urljoin
 from datetime import datetime
 import idna
 import socket
+import ipaddress
 from typing import Tuple, Optional, Dict, Any, List
 import httpx
 from src.utils.errors import ValidationError
@@ -353,6 +354,27 @@ def check_domain_public_ip(domain: str) -> str:
         return "Gagal Resolusi IP"
 
 
+def is_safe_public_ip(ip_str: str) -> bool:
+    """Verifies that an IP string is a valid, globally routable public IPv4/IPv6 address.
+    Strictly rejects private subnets (RFC 1918), loopback, link-local (169.254.x.x cloud metadata),
+    multicast, and reserved addresses to eliminate Server-Side Request Forgery (SSRF) risks.
+    """
+    if not ip_str or not isinstance(ip_str, str):
+        return False
+    try:
+        ip_obj = ipaddress.ip_address(ip_str.strip())
+        return (
+            ip_obj.is_global
+            and not ip_obj.is_private
+            and not ip_obj.is_loopback
+            and not ip_obj.is_link_local
+            and not ip_obj.is_multicast
+            and not ip_obj.is_reserved
+        )
+    except ValueError:
+        return False
+
+
 def is_cloudflare_ip(ip: str) -> bool:
     """Checks if IP belongs to typical Cloudflare proxy IP prefixes."""
     if not ip or ip in ("Gagal Resolusi IP", "-"):
@@ -383,6 +405,16 @@ def is_same_site_canonical(from_url: str, to_url: str) -> bool:
     if not h1 or not h2:
         return False
 
+    # Normalize IDNA/punycode for accurate canonical comparison
+    try:
+        h1 = idna.encode(h1).decode("ascii")
+    except Exception:
+        pass
+    try:
+        h2 = idna.encode(h2).decode("ascii")
+    except Exception:
+        pass
+
     is_host_same = (h1 == h2 or h1 == f"www.{h2}" or h2 == f"www.{h1}")
     if not is_host_same:
         return False
@@ -411,7 +443,10 @@ def resolve_doh_ips(domain: str, timeout: float = 3.0) -> List[str]:
                 if resp.status == 200:
                     data = json.loads(resp.read().decode("utf-8"))
                     answers = data.get("Answer", [])
-                    ips = [ans["data"] for ans in answers if ans.get("type") == 1 and ans.get("data")]
+                    ips = [
+                        ans["data"] for ans in answers
+                        if ans.get("type") == 1 and ans.get("data") and is_safe_public_ip(ans.get("data"))
+                    ]
                     if ips:
                         return ips
         except Exception:
@@ -448,8 +483,8 @@ def probe_single_step(url: str, timeout: float = 4.0) -> Tuple[Optional[int], Op
         except Exception:
             pass
 
-    # 2. Nawala / ISP Block bypass via DoH
-    ips = resolve_doh_ips(host, timeout=3.0)
+    # 2. Nawala / ISP Block bypass via DoH (SSRF-protected: safe public Anycast IPs only)
+    ips = [ip for ip in resolve_doh_ips(host, timeout=3.0) if is_safe_public_ip(ip)]
     for proto in schemes:
         for ip in ips:
             try:
@@ -470,7 +505,7 @@ def probe_single_step(url: str, timeout: float = 4.0) -> Tuple[Optional[int], Op
 
 def trace_doh_chain(domain: str, timeout: float = 4.0) -> Optional[Dict[str, Any]]:
     """Helper for DoH tracing fallback."""
-    ips = resolve_doh_ips(domain, timeout=timeout)
+    ips = [ip for ip in resolve_doh_ips(domain, timeout=timeout) if is_safe_public_ip(ip)]
     if not ips:
         return None
     for proto in ["https", "http"]:

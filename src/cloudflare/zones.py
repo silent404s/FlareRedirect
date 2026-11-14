@@ -118,14 +118,29 @@ def fetch_all_zones(
     return zones
 
 
-def find_matching_zone(hostname: str, available_zones: List[ZoneItem]) -> Optional[ZoneItem]:
-    """Finds the most specific zone that matches the given hostname."""
+def get_zone_attr(item: Any, attr: str, default: str = "") -> str:
+    """Safely extracts attribute from either ZoneItem object or dictionary representation."""
+    if hasattr(item, attr):
+        val = getattr(item, attr)
+        return str(val) if val is not None else default
+    if isinstance(item, dict):
+        val = item.get(attr)
+        return str(val) if val is not None else default
+    return default
+
+
+def find_matching_zone(hostname: str, available_zones: List[Any]) -> Optional[Any]:
+    """Finds the most specific zone that matches the given hostname.
+    Supports both ZoneItem instances and cached zone dictionaries.
+    """
     clean_host = normalize_hostname(hostname)
-    best_match: Optional[ZoneItem] = None
+    best_match: Optional[Any] = None
     longest_match_len = 0
 
     for zone in available_zones:
-        z_name = zone.name.lower()
+        z_name = get_zone_attr(zone, "name").lower()
+        if not z_name:
+            continue
         if clean_host == z_name or clean_host.endswith("." + z_name):
             if len(z_name) > longest_match_len:
                 longest_match_len = len(z_name)
@@ -134,7 +149,7 @@ def find_matching_zone(hostname: str, available_zones: List[ZoneItem]) -> Option
     return best_match
 
 
-def find_matching_zone_for_raw(raw_domain: str, available_zones: List[ZoneItem]) -> Optional[ZoneItem]:
+def find_matching_zone_for_raw(raw_domain: str, available_zones: List[Any]) -> Optional[Any]:
     """Finds zone even if user pasted raw URL, www., or subdomains."""
     try:
         clean = clean_domain_input(raw_domain)
@@ -145,8 +160,8 @@ def find_matching_zone_for_raw(raw_domain: str, available_zones: List[ZoneItem])
 
 def find_zone_across_accounts(
     domain_string: str,
-    cached_zones: Optional[List[ZoneItem]] = None,
-) -> Tuple[Optional[str], Optional[str], Optional[ZoneItem], Optional[str]]:
+    cached_zones: Optional[List[Any]] = None,
+) -> Tuple[Optional[str], Optional[str], Optional[Any], Optional[str]]:
     """Searches across all connected Cloudflare accounts (FlarePilot architecture).
     1. First checks in-memory cache of zones across all connected accounts.
     2. If not found in cache, generates parent domain candidates and queries Cloudflare API
@@ -163,22 +178,29 @@ def find_zone_across_accounts(
     if not accounts:
         return None, None, None, "Belum ada akun Cloudflare yang terhubung dalam sesi."
 
-    # 1. Check in all cached zones
-    all_cached: List[ZoneItem] = list(cached_zones or [])
+    # 1. Check in all cached zones safely (handles both objects and dicts)
+    all_cached: List[Any] = list(cached_zones or [])
     for acc in accounts:
         for z in acc.zones:
-            if not any(cz.id == z.id for cz in all_cached):
+            zid = get_zone_attr(z, "id")
+            if not any(get_zone_attr(cz, "id") == zid for cz in all_cached):
                 all_cached.append(z)
 
     match = find_matching_zone(clean, all_cached)
     if match:
+        m_account_id = get_zone_attr(match, "account_id")
+        m_account_label = get_zone_attr(match, "account_label")
         # Check if matching zone belongs to an active connected account
         for acc in accounts:
-            if (match.account_id and acc.account_id == match.account_id) or (
-                match.account_label and acc.label.lower() == match.account_label.lower()
+            if (m_account_id and acc.account_id == m_account_id) or (
+                m_account_label and acc.label.lower() == m_account_label.lower()
             ):
-                match.account_id = acc.account_id
-                match.account_label = acc.label
+                if hasattr(match, "account_id"):
+                    match.account_id = acc.account_id
+                    match.account_label = acc.label
+                elif isinstance(match, dict):
+                    match["account_id"] = acc.account_id
+                    match["account_label"] = acc.label
                 return acc.account_id, acc.label, match, None
 
     # 2. Live API search across all connected accounts
@@ -203,17 +225,20 @@ def find_zone_across_accounts(
             except Exception:
                 continue
 
-    if match and match.account_label:
-        return None, match.account_label, match, f"Domain '{clean}' tercatat pada akun '{match.account_label}' yang saat ini tidak terhubung."
+    m_label = get_zone_attr(match, "account_label") if match else None
+    if match and m_label:
+        return None, m_label, match, f"Domain '{clean}' tercatat pada akun '{m_label}' yang saat ini tidak terhubung."
 
     return None, None, None, f"Domain '{clean}' tidak ditemukan pada akun Cloudflare manapun."
 
 
-def resolve_account_for_zone(zone_id: str, available_zones: List[ZoneItem]) -> Optional[str]:
+def resolve_account_for_zone(zone_id: str, available_zones: List[Any]) -> Optional[str]:
     """Finds account_id for a zone from the cached zones list or session."""
     for z in available_zones:
-        if z.id == zone_id and z.account_id:
-            return z.account_id
+        if get_zone_attr(z, "id") == zone_id:
+            acc_id = get_zone_attr(z, "account_id")
+            if acc_id:
+                return acc_id
     return active_session.find_account_id_for_zone(zone_id)
 
 

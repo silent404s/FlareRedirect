@@ -27,6 +27,7 @@ from src.cloudflare.zones import (
     fetch_all_zones,
     _fetch_zones_for_single_account,
     find_zone_across_accounts,
+    get_zone_attr,
     ZoneItem,
 )
 from src.cloudflare.redirects import (
@@ -36,9 +37,23 @@ from src.cloudflare.redirects import (
     delete_redirect_rule,
 )
 
-# Background tasks tracking
-TASKS = {}
+# Background tasks tracking with auto-eviction to prevent memory leaks
+TASKS: Dict[str, Dict[str, Any]] = {}
 TASKS_LOCK = threading.Lock()
+MAX_TASKS_CAPACITY = 8
+
+
+def register_background_task(task_id: str, task_dict: Dict[str, Any]) -> None:
+    """Registers task and evicts oldest finished tasks to prevent heap bloat."""
+    with TASKS_LOCK:
+        completed_keys = [
+            k for k, v in TASKS.items()
+            if v.get("status") in ("completed", "error", "cancelled")
+        ]
+        while len(TASKS) >= MAX_TASKS_CAPACITY and completed_keys:
+            oldest = completed_keys.pop(0)
+            TASKS.pop(oldest, None)
+        TASKS[task_id] = task_dict
 
 
 def init_session_from_config():
@@ -95,24 +110,76 @@ class FlareWebHandler(SimpleHTTPRequestHandler):
         self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
         self.send_header("Pragma", "no-cache")
         self.send_header("Expires", "0")
+        # Security Headers (Clickjacking, MIME Sniffing, and CSP protection)
+        self.send_header("X-Frame-Options", "DENY")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("Referrer-Policy", "strict-origin-when-cross-origin")
+        self.send_header(
+            "Content-Security-Policy",
+            "default-src 'self' 'unsafe-inline'; connect-src 'self' http://127.0.0.1:* http://localhost:* ws://127.0.0.1:* ws://localhost:* https://cloudflare-dns.com https://dns.google; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline';"
+        )
         super().end_headers()
 
-    def log_message(self, format, *args):
+    def log_message(self, format: str, *args: Any) -> None:
         # Suppress noisy standard request logging
         pass
 
-    def _send_json(self, status_code: int, data: dict):
+    def _is_safe_origin(self) -> bool:
+        """Validates that API requests originate strictly from trusted loopback origins (Anti-CSRF)."""
+        origin = self.headers.get("Origin")
+        referer = self.headers.get("Referer")
+
+        if origin:
+            try:
+                parsed = urlparse(origin)
+                host = (parsed.hostname or "").lower()
+                if host not in ("127.0.0.1", "localhost", "::1"):
+                    return False
+            except Exception:
+                return False
+
+        if referer:
+            try:
+                parsed = urlparse(referer)
+                host = (parsed.hostname or "").lower()
+                if host not in ("127.0.0.1", "localhost", "::1"):
+                    return False
+            except Exception:
+                return False
+
+        # Direct local non-browser requests (e.g. tests, curl) must come from loopback client IP
+        if not origin and not referer:
+            client_ip = self.client_address[0] if self.client_address else ""
+            if client_ip not in ("127.0.0.1", "::1", "localhost"):
+                return False
+
+        return True
+
+    def _send_cors_headers(self) -> None:
+        """Emits restrictive CORS headers only for trusted loopback origins."""
+        origin = self.headers.get("Origin")
+        if origin:
+            try:
+                parsed = urlparse(origin)
+                host = (parsed.hostname or "").lower()
+                if host in ("127.0.0.1", "localhost", "::1"):
+                    self.send_header("Access-Control-Allow-Origin", origin)
+                    self.send_header("Vary", "Origin")
+            except Exception:
+                pass
+        self.send_header("Access-Control-Allow-Headers", "Content-Type, X-Requested-With")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+
+    def _send_json(self, status_code: int, data: Dict[str, Any]) -> None:
         body = json.dumps(data, ensure_ascii=False).encode("utf-8")
         self.send_response(status_code)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
-        self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type")
-        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+        self._send_cors_headers()
         self.end_headers()
         self.wfile.write(body)
 
-    def _read_json_body(self) -> dict:
+    def _read_json_body(self) -> Dict[str, Any]:
         try:
             length = int(self.headers.get("Content-Length", 0))
             if length > 0:
@@ -122,35 +189,39 @@ class FlareWebHandler(SimpleHTTPRequestHandler):
         except Exception:
             return {}
 
-    def do_OPTIONS(self):
+    def do_OPTIONS(self) -> None:
         self.send_response(204)
-        self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type")
-        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+        self._send_cors_headers()
         self.end_headers()
 
-    def do_GET(self):
+    def do_GET(self) -> None:
         parsed = urlparse(self.path)
         path = parsed.path
         query = parse_qs(parsed.query)
 
         if path.startswith("/api/"):
+            if not self._is_safe_origin():
+                self._send_json(403, {"error": "Akses ditolak: Permintaan lintas origin tidak diizinkan."})
+                return
             self._handle_api_get(path, query)
         else:
             # Static file fallback
             super().do_GET()
 
-    def do_POST(self):
+    def do_POST(self) -> None:
         parsed = urlparse(self.path)
         path = parsed.path
         body = self._read_json_body()
 
         if path.startswith("/api/"):
+            if not self._is_safe_origin():
+                self._send_json(403, {"error": "Akses ditolak: Permintaan lintas origin tidak diizinkan."})
+                return
             self._handle_api_post(path, body)
         else:
             self._send_json(404, {"error": "Not Found"})
 
-    def _handle_api_get(self, path: str, query: dict):
+    def _handle_api_get(self, path: str, query: Dict[str, List[str]]) -> None:
         if path == "/api/status":
             cfg = config_manager.load_config()
             cache = config_manager.load_cached_domains()
@@ -238,7 +309,7 @@ class FlareWebHandler(SimpleHTTPRequestHandler):
         else:
             self._send_json(404, {"error": f"Endpoint GET {path} tidak ditemukan"})
 
-    def _handle_api_post(self, path: str, body: dict):
+    def _handle_api_post(self, path: str, body: Dict[str, Any]) -> None:
         if path == "/api/accounts/switch":
             label = body.get("label", "").strip()
             acc_id = body.get("account_id", "").strip()
@@ -381,16 +452,34 @@ class FlareWebHandler(SimpleHTTPRequestHandler):
                 return
 
             try:
-                import importlib
-                if "src.security.validation" in sys.modules:
-                    importlib.reload(sys.modules["src.security.validation"])
-                from src.security.validation import check_live_redirect as fresh_check
-                res = fresh_check(domain)
-            except Exception:
                 res = check_live_redirect(domain)
+            except Exception as exc:
+                res = {
+                    "domain": domain,
+                    "status_code": None,
+                    "target_url": "",
+                    "final_url": "",
+                    "hops": 0,
+                    "is_multiple": False,
+                    "has_redirect": False,
+                    "chain": [],
+                    "checked_at": "",
+                    "error": str(exc),
+                    "bypassed_nawala": False,
+                }
 
             config_manager.update_cached_redirect_check(domain, res)
             self._send_json(200, res)
+
+        elif path == "/api/redirect/check-live/cancel":
+            task_id = body.get("task_id", "").strip()
+            with TASKS_LOCK:
+                if task_id in TASKS:
+                    TASKS[task_id]["status"] = "cancelled"
+                    TASKS[task_id]["cancelled"] = True
+                    self._send_json(200, {"success": True, "message": "Pengecekan live berhasil dibatalkan."})
+                else:
+                    self._send_json(404, {"error": "Task ID tidak ditemukan"})
 
         elif path == "/api/redirect/check-live":
             domains = body.get("domains", [])
@@ -399,32 +488,32 @@ class FlareWebHandler(SimpleHTTPRequestHandler):
                 return
 
             task_id = str(uuid.uuid4())
-            with TASKS_LOCK:
-                TASKS[task_id] = {
-                    "status": "running",
-                    "current": 0,
-                    "total": len(domains),
-                    "current_domain": "",
-                    "results": {},
-                    "error": None,
-                }
+            register_background_task(task_id, {
+                "status": "running",
+                "current": 0,
+                "total": len(domains),
+                "current_domain": "",
+                "results": {},
+                "error": None,
+                "cancelled": False,
+            })
 
             # Launch background worker thread
             def run_scan(tid: str, doms: list):
                 results = {}
-                try:
-                    import importlib
-                    if "src.security.validation" in sys.modules:
-                        importlib.reload(sys.modules["src.security.validation"])
-                    from src.security.validation import check_live_redirect as worker_check
-                except Exception:
-                    worker_check = check_live_redirect
+                worker_check = check_live_redirect
 
                 try:
                     with ThreadPoolExecutor(max_workers=15) as executor:
                         future_to_dom = {executor.submit(worker_check, d): d for d in doms}
                         idx = 0
                         for future in as_completed(future_to_dom):
+                            with TASKS_LOCK:
+                                if TASKS.get(tid, {}).get("cancelled"):
+                                    for f in future_to_dom:
+                                        f.cancel()
+                                    break
+
                             d = future_to_dom[future]
                             idx += 1
                             try:
@@ -434,7 +523,7 @@ class FlareWebHandler(SimpleHTTPRequestHandler):
 
                             results[d.lower()] = res
                             with TASKS_LOCK:
-                                if tid in TASKS:
+                                if tid in TASKS and not TASKS[tid].get("cancelled"):
                                     TASKS[tid]["current"] = idx
                                     TASKS[tid]["current_domain"] = d
                                     TASKS[tid]["results"][d.lower()] = res
@@ -444,12 +533,12 @@ class FlareWebHandler(SimpleHTTPRequestHandler):
                                 config_manager.save_cached_redirect_checks(results)
 
                     with TASKS_LOCK:
-                        if tid in TASKS:
+                        if tid in TASKS and not TASKS[tid].get("cancelled"):
                             TASKS[tid]["status"] = "completed"
                             TASKS[tid]["results"] = results
                 except Exception as exc:
                     with TASKS_LOCK:
-                        if tid in TASKS:
+                        if tid in TASKS and not TASKS[tid].get("cancelled"):
                             TASKS[tid]["status"] = "error"
                             TASKS[tid]["error"] = str(exc)
 
@@ -471,6 +560,18 @@ class FlareWebHandler(SimpleHTTPRequestHandler):
                 if is_delete:
                     count = delete_matching_redirects_for_domain(zone_id, source, account_id=account_id)
                     config_manager.update_cached_target(zone_id, None)
+                    config_manager.save_cached_redirect_checks({
+                        source.lower(): {
+                            "domain": source,
+                            "status_code": 200,
+                            "target_url": "",
+                            "hops": 0,
+                            "has_redirect": False,
+                            "is_multiple": False,
+                            "chain": [],
+                            "bypassed_nawala": False,
+                        }
+                    })
                     self._send_json(200, {"success": True, "message": f"{count} aturan redirect dihapus."})
                 else:
                     if not dest or dest in ("", "-"):
@@ -486,6 +587,18 @@ class FlareWebHandler(SimpleHTTPRequestHandler):
                         clean_conflicts=True,
                     )
                     config_manager.update_cached_target(zone_id, norm_target)
+                    config_manager.save_cached_redirect_checks({
+                        source.lower(): {
+                            "domain": source,
+                            "status_code": 301,
+                            "target_url": norm_target,
+                            "hops": 1,
+                            "has_redirect": True,
+                            "is_multiple": False,
+                            "chain": [norm_target],
+                            "bypassed_nawala": False,
+                        }
+                    })
                     self._send_json(200, {"success": True, "target": norm_target})
             except Exception as exc:
                 self._send_json(400, {"error": str(exc)})
@@ -509,6 +622,15 @@ class FlareWebHandler(SimpleHTTPRequestHandler):
                 acc_id = item.get("account_id")
                 acc_label = item.get("account_label")
 
+                # Auto-resolve zone from source domain if zone_id was not provided
+                if (not zid or not acc_id) and source:
+                    cache = config_manager.load_cached_domains()
+                    cached_zones = cache.get("zones", [])
+                    found_acc, _, found_z, _ = find_zone_across_accounts(source, cached_zones=cached_zones)
+                    if found_z:
+                        zid = zid or get_zone_attr(found_z, "id")
+                        acc_id = acc_id or found_acc
+
                 try:
                     norm_dest, _ = validate_destination_url(dest, source_host=source)
                     create_redirect_rule(
@@ -526,13 +648,47 @@ class FlareWebHandler(SimpleHTTPRequestHandler):
                     failed += 1
                     errors.append(f"{source}: {str(exc)}")
 
-            # Update cache with applied targets
+            # Update cache with applied targets and optimistic redirect checks
             if applied:
                 cache = config_manager.load_cached_domains()
                 zones = cache.get("zones", [])
                 targets = cache.get("targets", {})
                 targets.update(applied)
-                config_manager.save_cached_domains(zones, targets=targets)
+
+                checks_update = {}
+                for item in items:
+                    zid = item.get("zone_id")
+                    s = item.get("source")
+                    if zid in applied and s:
+                        norm_target = applied[zid]
+                        checks_update[s.lower()] = {
+                            "domain": s,
+                            "target_url": norm_target,
+                            "status_code": 301,
+                            "hops": 1,
+                            "has_redirect": True,
+                            "is_multiple": False,
+                            "chain": [norm_target],
+                            "bypassed_nawala": False,
+                        }
+                        # Also update corresponding zone name if different from source
+                        for z in zones:
+                            if get_zone_attr(z, "id") == zid:
+                                z_name = get_zone_attr(z, "name")
+                                if z_name and z_name.lower() != s.lower():
+                                    checks_update[z_name.lower()] = {
+                                        "domain": z_name,
+                                        "target_url": norm_target,
+                                        "status_code": 301,
+                                        "hops": 1,
+                                        "has_redirect": True,
+                                        "is_multiple": False,
+                                        "chain": [norm_target],
+                                        "bypassed_nawala": False,
+                                    }
+                                break
+
+                config_manager.save_cached_domains(zones, targets=targets, redirect_checks=checks_update)
 
             self._send_json(200, {
                 "success": success,
@@ -547,6 +703,7 @@ class FlareWebHandler(SimpleHTTPRequestHandler):
                 return
 
             total_deleted = 0
+            checks_update = {}
             for z in zones_to_del:
                 zid = z.get("id")
                 zname = z.get("name")
@@ -555,8 +712,22 @@ class FlareWebHandler(SimpleHTTPRequestHandler):
                     cnt = delete_matching_redirects_for_domain(zid, zname, account_id=acc_id)
                     total_deleted += cnt
                     config_manager.update_cached_target(zid, None)
+                    if zname:
+                        checks_update[zname.lower()] = {
+                            "domain": zname,
+                            "status_code": 200,
+                            "target_url": "",
+                            "hops": 0,
+                            "has_redirect": False,
+                            "is_multiple": False,
+                            "chain": [],
+                            "bypassed_nawala": False,
+                        }
                 except Exception:
                     pass
+
+            if checks_update:
+                config_manager.save_cached_redirect_checks(checks_update)
 
             self._send_json(200, {"success": True, "deleted_rules": total_deleted})
 

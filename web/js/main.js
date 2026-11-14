@@ -18,6 +18,17 @@ let pageSize = 50;
 let activeScanTaskId = null;
 let scanPollInterval = null;
 
+// Security Sanitizer (XSS Protection)
+function escapeHtml(str) {
+  if (str === null || str === undefined) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 // DOM Elements Cache
 const DOM = {
   activeAccountBadge: document.getElementById('activeAccountBadge'),
@@ -196,8 +207,8 @@ function initEventListeners() {
   // Action Buttons
   DOM.openTargetExplorerBtn.addEventListener('click', openTargetExplorerModal);
   DOM.targetExplorerSearchInput.addEventListener('input', renderTargetExplorerTable);
-  DOM.checkLiveBtn.addEventListener('click', startLiveRedirectCheck);
-  DOM.cancelCheckBtn.addEventListener('click', cancelLiveRedirectCheck);
+  DOM.checkLiveBtn.addEventListener('click', () => startLiveRedirectCheck());
+  DOM.cancelCheckBtn.addEventListener('click', () => cancelLiveRedirectCheck(false));
   DOM.openBulkBtn.addEventListener('click', openBulkModal);
   DOM.executeBulkBtn.addEventListener('click', executeBulkRedirect);
   DOM.deleteSelectedBtn.addEventListener('click', deleteSelectedRedirects);
@@ -354,10 +365,24 @@ function filterAndRender() {
   const selectedStatus = DOM.statusFilter.value.toLowerCase();
   const selectedRedirect = DOM.redirectFilter.value;
 
+  let cleanQuery = '';
+  let apexQuery = '';
+  if (query) {
+    cleanQuery = query.replace(/^https?:\/\//i, '').replace(/^\/\//, '').split('/')[0].split('?')[0].split('#')[0].split(':')[0].trim();
+    apexQuery = cleanQuery.startsWith('www.') ? cleanQuery.slice(4) : cleanQuery;
+  }
+
   filteredZones = allZones.filter(z => {
-    // 1. Source domain match
-    if (query && !z.name.toLowerCase().includes(query)) {
-      return false;
+    // 1. Source domain match (auto-resolves www, subdomains, full URLs, and partial queries)
+    if (query) {
+      const zName = z.name.toLowerCase();
+      const matchRaw = zName.includes(query);
+      const matchClean = cleanQuery && zName.includes(cleanQuery);
+      const matchApex = apexQuery && (zName === apexQuery || zName.includes(apexQuery));
+      const matchSubdomain = cleanQuery && cleanQuery.endsWith('.' + zName);
+      if (!matchRaw && !matchClean && !matchApex && !matchSubdomain) {
+        return false;
+      }
     }
 
     // 2. Destination / Target URL match (Reverse redirect search)
@@ -552,7 +577,7 @@ function renderCurrentPage() {
       if (isMult) {
         const pill = document.createElement('span');
         pill.className = 'pill pill-warning clickable-target-badge';
-        pill.innerHTML = `[${code} · ${hops} hops] ${target}${nawalaBadge}`;
+        pill.innerHTML = `[${escapeHtml(code)} · ${escapeHtml(hops)} hops] ${escapeHtml(target)}${nawalaBadge}`;
         pill.title = `Terdeteksi ${hops}x Pengalihan. Rantai: ${chkData.chain ? chkData.chain.join(' → ') : target}${chkData.bypassed_nawala ? ' (Bypass Nawala/ISP)' : ''}\n\nKlik untuk memfilter semua domain yang mengarah ke target ini`;
         pill.addEventListener('click', (e) => {
           e.stopPropagation();
@@ -562,7 +587,7 @@ function renderCurrentPage() {
       } else if (hops === 1) {
         const pill = document.createElement('span');
         pill.className = 'pill pill-success clickable-target-badge';
-        pill.innerHTML = `[${code || 301}] ${target}${nawalaBadge}`;
+        pill.innerHTML = `[${escapeHtml(code || 301)}] ${escapeHtml(target)}${nawalaBadge}`;
         pill.title = `Normal 1x Redirect: ${target}${chkData.bypassed_nawala ? ' (Bypass Nawala/ISP)' : ''}\n\nKlik untuk memfilter semua domain yang mengarah ke target ini`;
         pill.addEventListener('click', (e) => {
           e.stopPropagation();
@@ -577,7 +602,7 @@ function renderCurrentPage() {
       } else {
         const pill = document.createElement('span');
         pill.className = 'pill pill-neutral';
-        pill.innerHTML = `${code || 200} OK (Tanpa Redirect)${nawalaBadge}`;
+        pill.innerHTML = `${escapeHtml(code || 200)} OK (Tanpa Redirect)${nawalaBadge}`;
         tdTarget.appendChild(pill);
       }
     } else {
@@ -665,13 +690,13 @@ async function executeQuickTrace() {
 
     const nwBadge = data.bypassed_nawala ? ' (Bypass Nawala via DoH)' : '';
     if (data.is_multiple || data.hops > 1) {
-      DOM.quickTraceOutput.innerHTML = `<span class="pill pill-warning">[${data.status_code || 301} · ${data.hops} hops] ${data.target_url}${data.bypassed_nawala ? ' (DoH)' : ''}</span>`;
+      DOM.quickTraceOutput.innerHTML = `<span class="pill pill-warning">[${escapeHtml(data.status_code || 301)} · ${escapeHtml(data.hops)} hops] ${escapeHtml(data.target_url)}${data.bypassed_nawala ? ' (DoH)' : ''}</span>`;
       showToast(`Domain '${raw}' terdeteksi ${data.hops}x Redirects!${nwBadge}`, true);
     } else if (data.hops === 1) {
-      DOM.quickTraceOutput.innerHTML = `<span class="pill pill-success">[${data.status_code || 301}] ${data.target_url}${data.bypassed_nawala ? ' (DoH)' : ''}</span>`;
+      DOM.quickTraceOutput.innerHTML = `<span class="pill pill-success">[${escapeHtml(data.status_code || 301)}] ${escapeHtml(data.target_url)}${data.bypassed_nawala ? ' (DoH)' : ''}</span>`;
       showToast(`Domain '${raw}' normal 1x redirect ke ${data.target_url}${nwBadge}`);
     } else if (data.error) {
-      DOM.quickTraceOutput.innerHTML = `<span class="pill pill-danger">Error: ${data.error}</span>`;
+      DOM.quickTraceOutput.innerHTML = `<span class="pill pill-danger">Error: ${escapeHtml(data.error)}</span>`;
       showToast(`Gagal memeriksa '${raw}': ${data.error}`, true);
     } else {
       DOM.quickTraceOutput.innerHTML = `<span class="pill pill-neutral">200 OK (Tanpa Redirect)${data.bypassed_nawala ? ' (DoH)' : ''}</span>`;
@@ -681,15 +706,17 @@ async function executeQuickTrace() {
     updateKpis();
     filterAndRender();
   } catch (err) {
-    DOM.quickTraceOutput.innerHTML = `<span class="pill pill-danger">Error: ${err.message}</span>`;
+    DOM.quickTraceOutput.innerHTML = `<span class="pill pill-danger">Error: ${escapeHtml(err.message)}</span>`;
     showToast('Gagal memeriksa domain: ' + err.message, true);
   } finally {
     DOM.quickTraceBtn.disabled = false;
   }
 }
 
-async function checkSingleDomain(zone) {
-  showToast(`Memeriksa live redirect '${zone.name}'...`);
+async function checkSingleDomain(zone, isSilent = false) {
+  if (!isSilent) {
+    showToast(`Memeriksa live redirect '${zone.name}'...`);
+  }
   try {
     const res = await fetch('/api/redirect/trace-single', {
       method: 'POST',
@@ -701,42 +728,52 @@ async function checkSingleDomain(zone) {
     updateKpis();
     renderCurrentPage();
 
-    if (data.is_multiple || data.hops > 1) {
-      showToast(`⚠️ '${zone.name}' terdeteksi ${data.hops}x Redirects!`, true);
-    } else if (data.hops === 1) {
-      showToast(`✅ '${zone.name}' normal 1x redirect (${data.status_code}) ke ${data.target_url}`);
-    } else if (data.error) {
-      showToast(`✕ '${zone.name}': ${data.error}`, true);
-    } else {
-      showToast(`○ '${zone.name}': 200 OK (Tanpa Redirect)`);
+    if (!isSilent) {
+      if (data.is_multiple || data.hops > 1) {
+        showToast(`⚠️ '${zone.name}' terdeteksi ${data.hops}x Redirects!`, true);
+      } else if (data.hops === 1) {
+        showToast(`✅ '${zone.name}' normal 1x redirect (${data.status_code}) ke ${data.target_url}`);
+      } else if (data.error) {
+        showToast(`✕ '${zone.name}': ${data.error}`, true);
+      } else {
+        showToast(`○ '${zone.name}': 200 OK (Tanpa Redirect)`);
+      }
     }
   } catch (err) {
-    showToast(`Gagal memeriksa '${zone.name}': ` + err.message, true);
+    if (!isSilent) {
+      showToast(`Gagal memeriksa '${zone.name}': ` + err.message, true);
+    }
   }
 }
 
 // --- CONCURRENT BATCH LIVE REDIRECT CHECKER ---
 
-async function startLiveRedirectCheck() {
+async function startLiveRedirectCheck(customDomains = null, isAuto = false) {
   if (activeScanTaskId) {
-    showToast('Pengecekan live redirect sedang berlangsung.', true);
-    return;
+    if (isAuto) {
+      cancelLiveRedirectCheck(true);
+    } else {
+      showToast('Pengecekan live redirect sedang berlangsung.', true);
+      return;
+    }
   }
 
-  // Use selected domains if any, else use all filtered
+  // Use customDomains if provided, else selected domains if any, else use all filtered
   let targetDomains = [];
-  if (selectedZoneIds.size > 0) {
+  if (Array.isArray(customDomains) && customDomains.length > 0) {
+    targetDomains = customDomains;
+  } else if (selectedZoneIds.size > 0) {
     targetDomains = allZones.filter(z => selectedZoneIds.has(z.id)).map(z => z.name);
   } else {
     targetDomains = filteredZones.map(z => z.name);
   }
 
   if (targetDomains.length === 0) {
-    showToast('Tidak ada domain yang dapat diperiksa.', true);
+    if (!isAuto) showToast('Tidak ada domain yang dapat diperiksa.', true);
     return;
   }
 
-  if (targetDomains.length > 50) {
+  if (!isAuto && targetDomains.length > 50) {
     const ok = confirm(`Mulai pengecekan live redirect untuk ${targetDomains.length} domain?\n\nPengecekan berjalan otomatis di background secara multi-threaded (cepat dan tidak membuat lag).`);
     if (!ok) return;
   }
@@ -744,7 +781,9 @@ async function startLiveRedirectCheck() {
   DOM.checkLiveBtn.disabled = true;
   DOM.progressCard.style.display = 'flex';
   DOM.progressBarFill.style.width = '0%';
-  DOM.progressTitle.textContent = `Memulai pengecekan ${targetDomains.length} domain...`;
+  DOM.progressTitle.textContent = isAuto
+    ? `Mengecek otomatis live redirect ${targetDomains.length} domain yang baru dialihkan...`
+    : `Memulai pengecekan ${targetDomains.length} domain...`;
 
   try {
     const res = await fetch('/api/redirect/check-live', {
@@ -772,6 +811,7 @@ async function pollScanProgress() {
     const res = await fetch(`/api/redirect/check-live/status?task_id=${activeScanTaskId}`);
     if (res.status === 404) {
       clearInterval(scanPollInterval);
+      scanPollInterval = null;
       activeScanTaskId = null;
       return;
     }
@@ -787,7 +827,7 @@ async function pollScanProgress() {
     // Incremental merge
     if (task.results) {
       Object.assign(redirectChecksMap, task.results);
-      if (current % 25 === 0) {
+      if (current % 5 === 0 || current === total) {
         updateKpis();
         renderCurrentPage();
       }
@@ -795,6 +835,7 @@ async function pollScanProgress() {
 
     if (task.status === 'completed' || task.status === 'error') {
       clearInterval(scanPollInterval);
+      scanPollInterval = null;
       activeScanTaskId = null;
       DOM.progressCard.style.display = 'none';
       DOM.checkLiveBtn.disabled = false;
@@ -813,12 +854,24 @@ async function pollScanProgress() {
   }
 }
 
-function cancelLiveRedirectCheck() {
-  if (scanPollInterval) clearInterval(scanPollInterval);
+function cancelLiveRedirectCheck(isSilent = false) {
+  if (activeScanTaskId) {
+    fetch('/api/redirect/check-live/cancel', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ task_id: activeScanTaskId })
+    }).catch(() => {});
+  }
+  if (scanPollInterval) {
+    clearInterval(scanPollInterval);
+    scanPollInterval = null;
+  }
   activeScanTaskId = null;
   DOM.progressCard.style.display = 'none';
   DOM.checkLiveBtn.disabled = false;
-  showToast('Pengecekan live redirect dihentikan.');
+  if (!isSilent) {
+    showToast('Pengecekan live redirect dihentikan.');
+  }
 }
 
 // --- BULK REDIRECT ---
@@ -830,6 +883,60 @@ function openBulkModal() {
   }
   DOM.bulkDomainsInput.value = prefillDomains.join('\n');
   DOM.bulkModal.style.display = 'flex';
+}
+
+// --- DOMAIN RESOLUTION HELPERS (Apex & Subdomain Auto-Resolution) ---
+
+function extractDomainComponents(raw) {
+  if (!raw) return { raw: '', clean: '', apex: '' };
+  let clean = raw.trim()
+    .replace(/^https?:\/\//i, '')
+    .replace(/^\/\//, '')
+    .split('/')[0]
+    .split('?')[0]
+    .split('#')[0]
+    .split(':')[0]
+    .toLowerCase();
+
+  let apex = clean;
+  if (apex.startsWith('www.')) {
+    apex = apex.slice(4);
+  }
+  return { raw, clean, apex };
+}
+
+function findMatchingZoneInState(rawDomain) {
+  const { clean, apex } = extractDomainComponents(rawDomain);
+  if (!clean) return null;
+
+  // 1. Direct exact match with clean (e.g. sub.domain.com or domain.com)
+  let zone = allZones.find(z => z.name.toLowerCase() === clean);
+  if (zone) return { zone, matchType: 'exact', rootName: zone.name.toLowerCase() };
+
+  // 2. Match without 'www.' (e.g. www.domain.com -> domain.com)
+  if (apex && apex !== clean) {
+    zone = allZones.find(z => z.name.toLowerCase() === apex);
+    if (zone) return { zone, matchType: 'www', rootName: zone.name.toLowerCase() };
+  }
+
+  // 3. Subdomain matching: match parent/apex zone (e.g. sub.foundryprojectharrogate.co.uk -> foundryprojectharrogate.co.uk)
+  let bestMatch = null;
+  let longestLen = 0;
+  for (const z of allZones) {
+    const zName = z.name.toLowerCase();
+    if (clean === zName || clean.endsWith('.' + zName)) {
+      if (zName.length > longestLen) {
+        longestLen = zName.length;
+        bestMatch = z;
+      }
+    }
+  }
+
+  if (bestMatch) {
+    return { zone: bestMatch, matchType: 'subdomain', rootName: bestMatch.name.toLowerCase() };
+  }
+
+  return null;
 }
 
 async function executeBulkRedirect() {
@@ -851,24 +958,32 @@ async function executeBulkRedirect() {
   const unconnectedDomains = [];
 
   rawLines.forEach(raw => {
-    // clean protocol and paths
-    const cleanHost = raw.replace(/^https?:\/\//i, '').replace(/\/.*$/, '').toLowerCase();
-    const zone = allZones.find(z => z.name.toLowerCase() === cleanHost);
+    const { clean } = extractDomainComponents(raw);
+    if (!clean) return;
 
-    if (zone) {
+    const matchResult = findMatchingZoneInState(clean);
+
+    if (matchResult && matchResult.zone) {
+      const zone = matchResult.zone;
       if (!zone.is_connected) {
-        unconnectedDomains.push(`${cleanHost} (${zone.account_label})`);
+        unconnectedDomains.push(`${clean} (${zone.account_label})`);
       } else {
+        // If input is www.<root> or <root>, use apex zone name so Cloudflare rule covers apex + www.
+        // If input is a dedicated subdomain (e.g. blog.domain.com), target that specific hostname.
+        const sourceHost = (clean === 'www.' + zone.name.toLowerCase() || clean === zone.name.toLowerCase())
+          ? zone.name.toLowerCase()
+          : clean;
+
         items.push({
           zone_id: zone.id,
-          source: cleanHost,
+          source: sourceHost,
           target: targetUrl,
           account_id: zone.account_id,
           account_label: zone.account_label
         });
       }
     } else {
-      unconnectedDomains.push(`${cleanHost} (Zona tidak ditemukan)`);
+      unconnectedDomains.push(`${clean} (Zona tidak ditemukan)`);
     }
   });
 
@@ -895,8 +1010,55 @@ async function executeBulkRedirect() {
 
     if (data.success !== undefined) {
       closeModal('bulkModal');
-      showToast(`Bulk Redirect Berhasil: ${data.success} berhasil, ${data.failed} gagal.`);
-      loadDomains();
+      showToast(`Bulk Redirect: ${data.success} berhasil diterapkan.`);
+
+      // Optimistically update targetsMap and redirectChecksMap for applied domains
+      const appliedDomains = [];
+      items.forEach(item => {
+        if (item.zone_id && item.source) {
+          const finalTarget = item.target;
+          targetsMap[item.zone_id] = finalTarget;
+
+          redirectChecksMap[item.source.toLowerCase()] = {
+            domain: item.source,
+            status_code: 301,
+            target_url: finalTarget,
+            hops: 1,
+            has_redirect: true,
+            is_multiple: false,
+            chain: [finalTarget],
+            bypassed_nawala: false
+          };
+
+          const matchedZone = allZones.find(z => z.id === item.zone_id);
+          if (matchedZone && matchedZone.name.toLowerCase() !== item.source.toLowerCase()) {
+            redirectChecksMap[matchedZone.name.toLowerCase()] = {
+              domain: matchedZone.name,
+              status_code: 301,
+              target_url: finalTarget,
+              hops: 1,
+              has_redirect: true,
+              is_multiple: false,
+              chain: [finalTarget],
+              bypassed_nawala: false
+            };
+            appliedDomains.push(matchedZone.name);
+          }
+          appliedDomains.push(item.source);
+        }
+      });
+
+      updateKpis();
+      filterAndRender();
+
+      // Otomatis verifikasi live redirect tanpa perlu klik tombol "Cek Live Redirect"
+      const uniqueApplied = Array.from(new Set(appliedDomains));
+      if (uniqueApplied.length > 0) {
+        showToast(`Mengecek otomatis live redirect untuk ${uniqueApplied.length} domain...`);
+        setTimeout(() => {
+          startLiveRedirectCheck(uniqueApplied, true);
+        }, 1000);
+      }
     } else {
       alert('Gagal mengeksekusi: ' + (data.error || 'Unknown error'));
     }
@@ -953,14 +1115,40 @@ async function saveSingleRedirect(isDelete = false) {
 
     if (data.success) {
       closeModal('singleModal');
+      const currentZone = allZones.find(z => z.id === zoneId) || { id: zoneId, name: source };
       if (deleteMode) {
         delete targetsMap[zoneId];
+        redirectChecksMap[source.toLowerCase()] = {
+          domain: source,
+          status_code: 200,
+          target_url: '',
+          hops: 0,
+          has_redirect: false,
+          is_multiple: false,
+          chain: [],
+          bypassed_nawala: false
+        };
         showToast(`Aturan redirect untuk '${source}' berhasil dihapus.`);
+        updateKpis();
+        filterAndRender();
+        setTimeout(() => checkSingleDomain(currentZone, true), 800);
       } else {
         targetsMap[zoneId] = data.target;
+        redirectChecksMap[source.toLowerCase()] = {
+          domain: source,
+          status_code: 301,
+          target_url: data.target,
+          hops: 1,
+          has_redirect: true,
+          is_multiple: false,
+          chain: [data.target],
+          bypassed_nawala: false
+        };
         showToast(`301 Redirect berhasil dipasang ke ${data.target}`);
+        updateKpis();
+        filterAndRender();
+        setTimeout(() => checkSingleDomain(currentZone, false), 1000);
       }
-      renderCurrentPage();
     } else {
       alert('Gagal: ' + (data.error || 'Unknown error'));
     }
@@ -990,10 +1178,31 @@ async function deleteSelectedRedirects() {
     });
     const data = await res.json();
 
-    selectedZones.forEach(z => delete targetsMap[z.id]);
+    const deletedDomains = [];
+    selectedZones.forEach(z => {
+      delete targetsMap[z.id];
+      redirectChecksMap[z.name.toLowerCase()] = {
+        domain: z.name,
+        status_code: 200,
+        target_url: '',
+        hops: 0,
+        has_redirect: false,
+        is_multiple: false,
+        chain: [],
+        bypassed_nawala: false
+      };
+      deletedDomains.push(z.name);
+    });
     selectedZoneIds.clear();
     showToast(`Selesai! Total ${data.deleted_rules || 0} aturan redirect berhasil dibersihkan.`);
-    renderCurrentPage();
+    updateKpis();
+    filterAndRender();
+
+    if (deletedDomains.length > 0) {
+      setTimeout(() => {
+        startLiveRedirectCheck(deletedDomains, true);
+      }, 1000);
+    }
   } catch (err) {
     showToast('Gagal menghapus redirect: ' + err.message, true);
   } finally {
@@ -1019,8 +1228,20 @@ async function deleteDomainRedirects(zone) {
     const data = await res.json();
     if (data.success) {
       delete targetsMap[zone.id];
+      redirectChecksMap[zone.name.toLowerCase()] = {
+        domain: zone.name,
+        status_code: 200,
+        target_url: '',
+        hops: 0,
+        has_redirect: false,
+        is_multiple: false,
+        chain: [],
+        bypassed_nawala: false
+      };
       showToast(`Aturan redirect untuk '${zone.name}' berhasil dibersihkan.`);
-      renderCurrentPage();
+      updateKpis();
+      filterAndRender();
+      setTimeout(() => checkSingleDomain(zone, true), 800);
     } else {
       alert('Gagal: ' + data.error);
     }
@@ -1092,17 +1313,48 @@ function renderAccountsTable() {
   DOM.accountsTableBody.innerHTML = '';
   accountsList.forEach(acc => {
     const tr = document.createElement('tr');
-    tr.innerHTML = `
-      <td style="font-weight: 600;">
-        ${acc.label}
-      </td>
-      <td><span class="pill pill-success" style="font-size: 11px;">Terhubung</span></td>
-      <td class="tabular-nums">${(acc.domain_count || 0).toLocaleString()} domain</td>
-      <td style="text-align: right; display: flex; gap: 6px; justify-content: flex-end;">
-        <button class="btn btn-secondary btn-icon" style="padding: 3px 8px; font-size: 11.5px;" title="Tarik ulang domain untuk akun ini" onclick="syncSingleAccount('${acc.label}')">Sync</button>
-        <button class="btn btn-danger btn-icon" style="padding: 3px 8px; font-size: 11.5px;" title="Putuskan akun ini" onclick="deleteAccount('${acc.label}')">Putuskan</button>
-      </td>
-    `;
+
+    const tdLabel = document.createElement('td');
+    tdLabel.style.fontWeight = '600';
+    tdLabel.textContent = acc.label;
+
+    const tdStatus = document.createElement('td');
+    tdStatus.innerHTML = '<span class="pill pill-success" style="font-size: 11px;">Terhubung</span>';
+
+    const tdCount = document.createElement('td');
+    tdCount.className = 'tabular-nums';
+    tdCount.textContent = `${(acc.domain_count || 0).toLocaleString()} domain`;
+
+    const tdActions = document.createElement('td');
+    tdActions.style.textAlign = 'right';
+    tdActions.style.display = 'flex';
+    tdActions.style.gap = '6px';
+    tdActions.style.justifyContent = 'flex-end';
+
+    const syncBtn = document.createElement('button');
+    syncBtn.className = 'btn btn-secondary btn-icon';
+    syncBtn.style.padding = '3px 8px';
+    syncBtn.style.fontSize = '11.5px';
+    syncBtn.title = 'Tarik ulang domain untuk akun ini';
+    syncBtn.textContent = 'Sync';
+    syncBtn.addEventListener('click', () => syncSingleAccount(acc.label));
+
+    const delBtn = document.createElement('button');
+    delBtn.className = 'btn btn-danger btn-icon';
+    delBtn.style.padding = '3px 8px';
+    delBtn.style.fontSize = '11.5px';
+    delBtn.title = 'Putuskan akun ini';
+    delBtn.textContent = 'Putuskan';
+    delBtn.addEventListener('click', () => deleteAccount(acc.label));
+
+    tdActions.appendChild(syncBtn);
+    tdActions.appendChild(delBtn);
+
+    tr.appendChild(tdLabel);
+    tr.appendChild(tdStatus);
+    tr.appendChild(tdCount);
+    tr.appendChild(tdActions);
+
     DOM.accountsTableBody.appendChild(tr);
   });
 }
@@ -1248,7 +1500,7 @@ function closeModal(modalId) {
 function showToast(message, isError = false) {
   const toast = document.createElement('div');
   toast.className = `toast ${isError ? 'toast-error' : 'toast-success'}`;
-  toast.innerHTML = `<span style="font-weight: 600;">${isError ? 'Error' : 'Info'}:</span> <span>${message}</span>`;
+  toast.innerHTML = `<span style="font-weight: 600;">${isError ? 'Error' : 'Info'}:</span> <span>${escapeHtml(message)}</span>`;
   DOM.toastContainer.appendChild(toast);
 
   setTimeout(() => {
@@ -1322,21 +1574,54 @@ function renderTargetExplorerTable() {
 
   sortedTargets.forEach((item, idx) => {
     const tr = document.createElement('tr');
-    tr.innerHTML = `
-      <td style="color: var(--text-muted);">${idx + 1}</td>
-      <td>
-        <span style="font-weight: 600; color: #ffffff; font-size: 13px; font-family: var(--font-mono);">${item.host}</span>
-        <span style="display: block; font-size: 11.5px; color: var(--text-subtle); margin-top: 2px; font-family: var(--font-mono);">${item.sampleUrl}</span>
-      </td>
-      <td style="text-align: center;">
-        <span class="pill pill-success" style="font-size: 11.5px; font-weight: 500;">${item.count.toLocaleString()} domain</span>
-      </td>
-      <td style="text-align: right;">
-        <button class="btn btn-secondary btn-icon" style="padding: 4px 10px; font-size: 11.5px;" onclick="selectTargetFromExplorer('${item.host}')">
-          Filter
-        </button>
-      </td>
-    `;
+
+    const tdIdx = document.createElement('td');
+    tdIdx.style.color = 'var(--text-muted)';
+    tdIdx.textContent = idx + 1;
+
+    const tdTarget = document.createElement('td');
+    const spanHost = document.createElement('span');
+    spanHost.style.fontWeight = '600';
+    spanHost.style.color = '#ffffff';
+    spanHost.style.fontSize = '13px';
+    spanHost.style.fontFamily = 'var(--font-mono)';
+    spanHost.textContent = item.host;
+
+    const spanSample = document.createElement('span');
+    spanSample.style.display = 'block';
+    spanSample.style.fontSize = '11.5px';
+    spanSample.style.color = 'var(--text-subtle)';
+    spanSample.style.marginTop = '2px';
+    spanSample.style.fontFamily = 'var(--font-mono)';
+    spanSample.textContent = item.sampleUrl;
+
+    tdTarget.appendChild(spanHost);
+    tdTarget.appendChild(spanSample);
+
+    const tdCount = document.createElement('td');
+    tdCount.style.textAlign = 'center';
+    const pillCount = document.createElement('span');
+    pillCount.className = 'pill pill-success';
+    pillCount.style.fontSize = '11.5px';
+    pillCount.style.fontWeight = '500';
+    pillCount.textContent = `${item.count.toLocaleString()} domain`;
+    tdCount.appendChild(pillCount);
+
+    const tdAction = document.createElement('td');
+    tdAction.style.textAlign = 'right';
+    const filterBtn = document.createElement('button');
+    filterBtn.className = 'btn btn-secondary btn-icon';
+    filterBtn.style.padding = '4px 10px';
+    filterBtn.style.fontSize = '11.5px';
+    filterBtn.textContent = 'Filter';
+    filterBtn.addEventListener('click', () => selectTargetFromExplorer(item.host));
+    tdAction.appendChild(filterBtn);
+
+    tr.appendChild(tdIdx);
+    tr.appendChild(tdTarget);
+    tr.appendChild(tdCount);
+    tr.appendChild(tdAction);
+
     DOM.targetExplorerTableBody.appendChild(tr);
   });
 }

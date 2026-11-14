@@ -99,6 +99,7 @@ class MultiAccountSessionManager:
     def __init__(self):
         self._accounts: Dict[str, AccountSession] = {}
         self._active_id: Optional[str] = None
+        self._zone_to_account: Dict[str, str] = {}  # O(1) reverse lookup cache
 
     @property
     def is_connected(self) -> bool:
@@ -230,14 +231,27 @@ class MultiAccountSessionManager:
         from src.utils.errors import AuthenticationError
         raise AuthenticationError("Tidak ada akun Cloudflare aktif dalam sesi. Silakan hubungkan akun terlebih dahulu.")
 
+    def register_zone_account(self, zone_id: str, account_id: str) -> None:
+        """Indexes a zone_id to its owning account_id for O(1) instant lookup."""
+        if zone_id and account_id:
+            self._zone_to_account[zone_id] = account_id
+
     def find_account_id_for_zone(self, zone_id: str) -> Optional[str]:
-        """Finds the account_id that owns the specified zone_id across all sessions."""
+        """Finds the account_id that owns the specified zone_id across all sessions.
+        Uses O(1) memory index with O(N) fallback.
+        """
         if not zone_id:
             return None
+        if zone_id in self._zone_to_account:
+            acc_id = self._zone_to_account[zone_id]
+            if acc_id in self._accounts:
+                return acc_id
+
         for acc in self._accounts.values():
             for z in acc.zones:
                 zid = getattr(z, "id", None) or (z.get("id") if isinstance(z, dict) else None)
                 if zid == zone_id:
+                    self._zone_to_account[zone_id] = acc.account_id
                     return acc.account_id
         return None
 
@@ -252,6 +266,7 @@ class MultiAccountSessionManager:
         if account_id in self._accounts:
             self._accounts[account_id].clear()
             del self._accounts[account_id]
+            self._zone_to_account = {k: v for k, v in self._zone_to_account.items() if v != account_id}
             if self._active_id == account_id:
                 # Switch active account to another one if exists
                 self._active_id = next(iter(self._accounts.keys()), None)
@@ -262,6 +277,7 @@ class MultiAccountSessionManager:
         for acc in list(self._accounts.values()):
             acc.clear()
         self._accounts.clear()
+        self._zone_to_account.clear()
         self._active_id = None
         gc.collect()
 

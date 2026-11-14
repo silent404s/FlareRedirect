@@ -1,5 +1,5 @@
 # ⚡ FlareRedirect Web (Localhost Engine)
-> **High Performance Cloudflare 301/302 Redirect Manager & Live Domain Tracer**  
+> **High Performance Cloudflare 301 Permanent Redirect Manager & Live Domain Tracer**  
 > Sistem web lokal mandiri (*localhost*) berkecepatan tinggi untuk mengelola, melacak, dan mengalihkan ribuan domain Cloudflare secara instan, aman, dan tanpa perantara pihak ketiga.
 
 [![Platform](https://img.shields.io/badge/Platform-Localhost%20Web-blue.svg)](#)
@@ -69,7 +69,7 @@ FlareRedirect/
 │   ├── index.html             # Tampilan dashboard web utama
 │   ├── server.py              # Server HTTP Python lokal (REST API & static server)
 │   └── start_web.bat          # Batch runner di folder web
-├── tests/                     # Unit & integration tests (71 passing tests)
+├── tests/                     # Unit & integration tests (81 passing tests, 100% pass)
 ├── config.json                # Penyimpanan akun Cloudflare lokal (ignored by git)
 ├── main.py                    # Entry point utama (menjalankan web server lokal)
 ├── requirements.txt           # Dependensi Python minimal (httpx, idna, dotenv)

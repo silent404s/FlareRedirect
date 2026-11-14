@@ -300,7 +300,7 @@ def load_cached_redirect_checks() -> Dict[str, Dict[str, Any]]:
 
 
 def save_cached_redirect_checks(checks: Dict[str, Dict[str, Any]]) -> bool:
-    """Merges and saves live redirect check results into data/domains_cache.json."""
+    """Merges and saves live redirect check results atomically into data/domains_cache.json."""
     cache = load_cached_domains()
     existing_checks = cache.get("redirect_checks", {})
     existing_checks.update(checks)
@@ -309,8 +309,10 @@ def save_cached_redirect_checks(checks: Dict[str, Dict[str, Any]]) -> bool:
     try:
         cache["redirect_checks"] = existing_checks
         cache_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(cache_path, "w", encoding="utf-8") as f:
+        temp_path = cache_path.with_suffix(".tmp")
+        with open(temp_path, "w", encoding="utf-8") as f:
             json.dump(cache, f, indent=4, ensure_ascii=False)
+        temp_path.replace(cache_path)
         return True
     except Exception:
         return False
@@ -406,8 +408,10 @@ def prune_orphan_cached_domains(valid_account_labels: Optional[List[str]] = None
             data["targets"] = targets
             data["redirect_checks"] = checks
 
-            with open(cache_path, "w", encoding="utf-8") as f:
+            temp_path = cache_path.with_suffix(".tmp")
+            with open(temp_path, "w", encoding="utf-8") as f:
                 json.dump(data, f, indent=4, ensure_ascii=False)
+            temp_path.replace(cache_path)
 
         return removed_count
     except Exception:

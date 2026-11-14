@@ -218,6 +218,23 @@ def build_rule_payload(
     )
 
 
+def is_rule_matching_source(r: RedirectRule, norm_source: str) -> bool:
+    """Checks if a RedirectRule specifically targets the given source domain.
+    Prevents false positive conflicts and deletions from loose substring matching
+    (e.g. preventing 'site.com' from accidentally matching 'mysite.com').
+    """
+    r_src = r.source_hostname.lower()
+    if r_src in ("*", norm_source, f"www.{norm_source}"):
+        return True
+    if norm_source.startswith("www.") and r_src == norm_source[4:]:
+        return True
+
+    clean_expr = r.expression.lower()
+    quoted_apex = f'"{norm_source}"'
+    quoted_www = f'"www.{norm_source}"'
+    return quoted_apex in clean_expr or quoted_www in clean_expr
+
+
 def detect_redirect_conflicts(
     zone_id: str,
     source_domain: str,
@@ -237,17 +254,9 @@ def detect_redirect_conflicts(
     norm_dest, _ = validate_destination_url(target_url, source_host=norm_source)
     ruleset_id, existing_rules = get_zone_redirect_ruleset(zone_id, account_id=account_id)
 
-    matching_rules: List[RedirectRule] = []
-    for r in existing_rules:
-        r_src = r.source_hostname.lower()
-        if (
-            r_src == "*"
-            or r_src == norm_source
-            or r_src == f"www.{norm_source}"
-            or (norm_source.startswith("www.") and r_src == norm_source[4:])
-            or norm_source in r.expression
-        ):
-            matching_rules.append(r)
+    matching_rules: List[RedirectRule] = [
+        r for r in existing_rules if is_rule_matching_source(r, norm_source)
+    ]
 
     if len(matching_rules) > 1:
         return {
@@ -528,14 +537,7 @@ def delete_matching_redirects_for_domain(
     norm_source = normalize_hostname(source_domain)
     deleted_count = 0
     for r in rules:
-        r_src = r.source_hostname.lower()
-        if (
-            r_src == "*"
-            or r_src == norm_source
-            or r_src == f"www.{norm_source}"
-            or (norm_source.startswith("www.") and r_src == norm_source[4:])
-            or norm_source in r.expression
-        ):
+        if is_rule_matching_source(r, norm_source):
             try:
                 delete_redirect_rule(zone_id=zone_id, ruleset_id=ruleset_id, rule_id=r.id, account_id=account_id)
                 deleted_count += 1
